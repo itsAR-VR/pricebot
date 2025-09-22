@@ -1,0 +1,60 @@
+Metadata-Version: 2.4
+Name: pricebot
+Version: 0.1.0
+Summary: Price intelligence backend for ingesting electronics vendor offers and serving price queries.
+Author: Cellntell Data Team
+Requires-Python: >=3.11
+Description-Content-Type: text/markdown
+Requires-Dist: fastapi>=0.111.0
+Requires-Dist: uvicorn[standard]>=0.30.0
+Requires-Dist: sqlmodel>=0.0.16
+Requires-Dist: alembic>=1.13.0
+Requires-Dist: pydantic-settings>=2.4.0
+Requires-Dist: pandas>=2.2.0
+Requires-Dist: openpyxl>=3.1.2
+Requires-Dist: python-multipart>=0.0.9
+Requires-Dist: tenacity>=8.2.3
+Provides-Extra: ocr
+Requires-Dist: pytesseract>=0.3.10; extra == "ocr"
+Requires-Dist: pillow>=10.0.0; extra == "ocr"
+Provides-Extra: pdf
+Requires-Dist: pypdf>=4.0.0; extra == "pdf"
+Provides-Extra: llm
+Requires-Dist: openai>=1.40.0; extra == "llm"
+
+# Pricebot Backend
+
+Backend service for Cellntell's price intelligence platform. The service ingests pricing sheets from vendors (Excel, CSV, PDF, images, chat dumps), normalizes the information, and exposes APIs that surface the latest and historical price data per product and vendor.
+
+## Core Features (Roadmap)
+- Structured ingestion for spreadsheets (Excel/CSV) with automatic schema detection.
+- OCR + LLM assisted extraction for PDFs and images shared via WhatsApp.
+- Persistent storage of vendors, products, and offer history (PostgreSQL/SQLite).
+- Retrieval APIs for current price, history, and document traceability.
+- Embedding-based search across aliases and document payloads.
+- Chatbot-friendly query layer for Vercel frontend integration.
+
+## Local Development
+```bash
+python -m venv .venv
+source .venv/bin/activate
+pip install -e .
+uvicorn app.main:app --reload
+```
+
+### CLI Ingestion
+Parse a spreadsheet and persist offers into the local database:
+```bash
+python -m app.cli.ingest "../Raw Data from Abdursajid.xlsx" --vendor "Raw Vendor"
+```
+
+The default configuration uses a local SQLite database (`pricebot.db`). Override settings via environment variables as defined in `app/core/config.py`.
+
+## Repository Layout
+- `app/core`: configuration helpers.
+- `app/db`: SQLModel definitions and session utilities.
+- `app/api`: FastAPI routers and dependencies.
+- `app/ingestion`: modular ingestion processors that translate raw files into normalized offers.
+- `app/services`: higher-level business logic for persisting and querying data.
+- `docs/`: design documents, including the schema draft.
+
