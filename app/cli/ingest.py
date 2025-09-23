@@ -63,7 +63,7 @@ def main(argv: list[str] | None = None) -> int:
 
     init_db()
     with get_session() as session:
-    source_metadata = {
+        source_metadata = {
         "original_path": str(file_path.resolve()),
         "processor": processor.name,
     }

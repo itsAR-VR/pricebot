@@ -84,6 +84,12 @@ pytest
 - `Procfile` runs `uvicorn app.main:app` (compatible with Railway/Heroku dynos).
 - `railway.json` configures the Railway service with health checks hitting `/health`.
 - Set environment variables (`DATABASE_URL`, `OPENAI_API_KEY`, etc.) through your hosting platform.
+- See `docs/deployment_railway.md` for a complete Railway rollout and scheduling guide.
+
+### Operator UI
+- Visit `http://localhost:8000/admin/documents` to monitor artefacts, statuses, and extracted offers.
+- Filter by status, drill into document details, and inspect raw ingestion metadata.
+- In production the same console is available at `https://<your-domain>/admin/documents` (protect with your platform’s auth solution).
 
 ## Repository Layout
 - `app/core`: configuration helpers.

@@ -29,8 +29,11 @@ app/pricebot.egg-info/requires.txt
 app/pricebot.egg-info/top_level.txt
 app/services/__init__.py
 app/services/offers.py
+app/ui/__init__.py
+app/ui/views.py
 tests/test_documents_api.py
 tests/test_offer_ingestion_service.py
+tests/test_operator_ui.py
 tests/test_spreadsheet_ingestion.py
 tests/test_text_utils.py
 tests/test_whatsapp_ingestion.py
