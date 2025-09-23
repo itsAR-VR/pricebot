@@ -1,4 +1,4 @@
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Optional, List
 from uuid import UUID, uuid4
 
@@ -6,9 +6,13 @@ from sqlalchemy import Column, JSON, UniqueConstraint
 from sqlmodel import Field, Relationship, SQLModel
 
 
+def _utcnow() -> datetime:
+    return datetime.now(timezone.utc)
+
+
 class TimestampMixin(SQLModel):
-    created_at: datetime = Field(default_factory=datetime.utcnow, nullable=False)
-    updated_at: datetime = Field(default_factory=datetime.utcnow, nullable=False)
+    created_at: datetime = Field(default_factory=_utcnow, nullable=False)
+    updated_at: datetime = Field(default_factory=_utcnow, nullable=False)
 
 
 class Vendor(SQLModel, table=True):
@@ -87,7 +91,7 @@ class Offer(SQLModel, table=True):
     product_id: UUID = Field(foreign_key="products.id", nullable=False)
     vendor_id: UUID = Field(foreign_key="vendors.id", nullable=False)
     source_document_id: UUID | None = Field(default=None, foreign_key="source_documents.id")
-    captured_at: datetime = Field(default_factory=datetime.utcnow, index=True)
+    captured_at: datetime = Field(default_factory=_utcnow, index=True)
     price: float = Field(nullable=False)
     currency: str = Field(default="USD", nullable=False)
     quantity: int | None = Field(default=None)
@@ -114,7 +118,7 @@ class PriceHistory(SQLModel, table=True):
     vendor_id: UUID = Field(foreign_key="vendors.id", nullable=False)
     price: float = Field(nullable=False)
     currency: str = Field(default="USD")
-    valid_from: datetime = Field(default_factory=datetime.utcnow, index=True)
+    valid_from: datetime = Field(default_factory=_utcnow, index=True)
     valid_to: datetime | None = Field(default=None, index=True)
     source_offer_id: UUID = Field(foreign_key="offers.id", nullable=False)
 
@@ -131,8 +135,8 @@ class IngestionJob(SQLModel, table=True):
     processor: str = Field(nullable=False, index=True)
     status: str = Field(default="queued", index=True)
     logs: dict | None = Field(default=None, sa_column=Column(JSON))
-    created_at: datetime = Field(default_factory=datetime.utcnow, nullable=False)
-    updated_at: datetime = Field(default_factory=datetime.utcnow, nullable=False)
+    created_at: datetime = Field(default_factory=_utcnow, nullable=False)
+    updated_at: datetime = Field(default_factory=_utcnow, nullable=False)
 
     source_document: SourceDocument = Relationship(back_populates="ingestion_jobs", sa_relationship_kwargs={"lazy": "selectin"})
 

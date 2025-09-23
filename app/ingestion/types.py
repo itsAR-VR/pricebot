@@ -1,10 +1,10 @@
 from dataclasses import dataclass, field
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Any
 
 
 def now_utc() -> datetime:
-    return datetime.utcnow()
+    return datetime.now(timezone.utc)
 
 
 @dataclass(slots=True)

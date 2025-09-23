@@ -1,0 +1,70 @@
+{% extends "base.html" %}
+{% block content %}
+<div class="filters">
+  <form method="get" action="/admin/documents">
+    <label>
+      Status
+      <select name="status" onchange="this.form.submit()">
+        <option value="" {% if not active_status %}selected{% endif %}>All</option>
+        <option value="processed" {% if active_status == 'processed' %}selected{% endif %}>Processed</option>
+        <option value="processed_with_warnings" {% if active_status == 'processed_with_warnings' %}selected{% endif %}>Warnings</option>
+        <option value="failed" {% if active_status == 'failed' %}selected{% endif %}>Failed</option>
+        <option value="pending" {% if active_status == 'pending' %}selected{% endif %}>Pending</option>
+      </select>
+    </label>
+  </form>
+  <button class="refresh-btn" onclick="window.location.reload()">Refresh</button>
+</div>
+
+<div class="meta-grid">
+  <div class="meta-item">
+    <h3>Total Documents</h3>
+    <p>{{ totals.total }}</p>
+  </div>
+  <div class="meta-item">
+    <h3>Processed</h3>
+    <p>{{ totals.processed }}</p>
+  </div>
+  <div class="meta-item">
+    <h3>Warnings</h3>
+    <p>{{ totals.processed_with_warnings }}</p>
+  </div>
+  <div class="meta-item">
+    <h3>Failed</h3>
+    <p>{{ totals.failed }}</p>
+  </div>
+</div>
+
+{% if documents %}
+<table>
+  <thead>
+    <tr>
+      <th>ID</th>
+      <th>File</th>
+      <th>Processor</th>
+      <th>Status</th>
+      <th>Offers</th>
+      <th>Started</th>
+      <th>Completed</th>
+      <th></th>
+    </tr>
+  </thead>
+  <tbody>
+    {% for doc in documents %}
+    <tr>
+      <td>{{ doc.id }}</td>
+      <td>{{ doc.file_name }}</td>
+      <td>{{ doc.file_type }}</td>
+      <td><span class="status" data-status="{{ doc.status }}">{{ doc.status }}</span></td>
+      <td>{{ doc.offer_count }}</td>
+      <td>{{ doc.ingest_started_at or '-' }}</td>
+      <td>{{ doc.ingest_completed_at or '-' }}</td>
+      <td><a class="details-link" href="/admin/documents/{{ doc.id }}">View</a></td>
+    </tr>
+    {% endfor %}
+  </tbody>
+</table>
+{% else %}
+<div class="empty-state">No documents ingested yet.</div>
+{% endif %}
+{% endblock %}

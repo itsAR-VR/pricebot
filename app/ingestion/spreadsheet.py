@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from math import isinf, isnan
 from pathlib import Path
 from typing import Any
 
@@ -56,7 +57,7 @@ class SpreadsheetIngestionProcessor(BaseIngestionProcessor):
                 model_number=self._extract_str(normalized, self.SKU_KEYS),
                 upc=self._extract_str(normalized, self.UPC_KEYS),
                 warehouse=self._extract_str(normalized, self.LOCATION_KEYS),
-                raw_payload={k: v for k, v in normalized.items() if v not in (None, "")},
+                raw_payload={k: v for k, v in normalized.items() if not self._is_missing(v)},
             )
             offers.append(offer)
 
@@ -73,7 +74,8 @@ class SpreadsheetIngestionProcessor(BaseIngestionProcessor):
             df = pd.read_excel(file_path)
 
         df = self._cleanup_dataframe(df)
-        if self._mostly_unnamed(df.columns):
+
+        if self._mostly_unnamed(df.columns) or self._looks_like_headerless(file_path, df):
             if suffix == ".csv":
                 df = pd.read_csv(file_path, header=None)
             else:
@@ -86,7 +88,7 @@ class SpreadsheetIngestionProcessor(BaseIngestionProcessor):
     def _cleanup_dataframe(df: pd.DataFrame) -> pd.DataFrame:
         df = df.dropna(how="all")
         df = df.dropna(axis=1, how="all")
-        df = df.applymap(lambda x: x.strip() if isinstance(x, str) else x)
+        df = df.map(lambda x: x.strip() if isinstance(x, str) else x)
         return df.reset_index(drop=True)
 
     @staticmethod
@@ -95,6 +97,17 @@ class SpreadsheetIngestionProcessor(BaseIngestionProcessor):
             return True
         unnamed = sum(str(col).lower().startswith("unnamed") for col in columns)
         return unnamed / len(columns) > 0.6
+
+    def _looks_like_headerless(self, _: Path, df: pd.DataFrame) -> bool:
+        if df.empty:
+            return False
+
+        columns = [str(col).strip() for col in df.columns]
+        if not columns:
+            return True
+
+        numeric_like = sum(1 for col in columns if self._parse_float(col) is not None)
+        return numeric_like / len(columns) >= 0.5
 
     def _normalize_key(self, key: Any) -> str:
         key_str = str(key).strip().lower()
@@ -115,11 +128,11 @@ class SpreadsheetIngestionProcessor(BaseIngestionProcessor):
     def _extract_description(self, row: dict[str, Any]) -> str | None:
         for key, value in row.items():
             if key in self.DESCRIPTION_KEYS or any(token in key for token in self.DESCRIPTION_KEYS):
-                if value not in (None, ""):
+                if not self._is_missing(value):
                     return str(value)
         for key, value in row.items():
-            if isinstance(value, str) and value:
-                return value
+            if not self._is_missing(value):
+                return str(value)
         return None
 
     def _extract_int(self, row: dict[str, Any], keys: set[str]) -> int | None:
@@ -134,7 +147,7 @@ class SpreadsheetIngestionProcessor(BaseIngestionProcessor):
         for key in row:
             if key in keys or any(token in key for token in keys):
                 value = row[key]
-                if value not in (None, ""):
+                if not self._is_missing(value):
                     return str(value).strip()
         return None
 
@@ -146,7 +159,10 @@ class SpreadsheetIngestionProcessor(BaseIngestionProcessor):
             cleaned = str(value).replace(",", "").replace("$", "").strip()
             if cleaned == "":
                 return None
-            return float(cleaned)
+            parsed = float(cleaned)
+            if isnan(parsed) or isinf(parsed):
+                return None
+            return parsed
         except (TypeError, ValueError):
             return None
 
@@ -158,7 +174,10 @@ class SpreadsheetIngestionProcessor(BaseIngestionProcessor):
             cleaned = str(value).replace(",", "").strip()
             if cleaned == "":
                 return None
-            return int(float(cleaned))
+            parsed = float(cleaned)
+            if isnan(parsed) or isinf(parsed):
+                return None
+            return int(parsed)
         except (TypeError, ValueError):
             return None
 
@@ -166,6 +185,18 @@ class SpreadsheetIngestionProcessor(BaseIngestionProcessor):
     def _vendor_from_path(file_path: Path) -> str:
         return file_path.stem.replace("_", " ")
 
+    @staticmethod
+    def _is_missing(value: Any) -> bool:
+        if value is None:
+            return True
+        if isinstance(value, str) and value.strip() == "":
+            return True
+        if isinstance(value, float) and isnan(value):
+            return True
+        try:
+            return bool(pd.isna(value))
+        except TypeError:
+            return False
+
 
 registry.register(SpreadsheetIngestionProcessor())
-

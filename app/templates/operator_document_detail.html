@@ -1,0 +1,55 @@
+{% extends "base.html" %}
+{% block content %}
+<div class="breadcrumb"><a href="/admin/documents">← Back to documents</a></div>
+
+<h2 style="margin-top:0;">{{ document.file_name }}</h2>
+<p class="subtitle">Processor: {{ document.file_type }} · Status: <span class="status" data-status="{{ document.status }}">{{ document.status }}</span></p>
+
+<div class="meta-grid">
+  <div class="meta-item">
+    <h3>Offers</h3>
+    <p>{{ document.offer_count }}</p>
+  </div>
+  <div class="meta-item">
+    <h3>Started</h3>
+    <p>{{ document.ingest_started_at or '-' }}</p>
+  </div>
+  <div class="meta-item">
+    <h3>Completed</h3>
+    <p>{{ document.ingest_completed_at or '-' }}</p>
+  </div>
+</div>
+
+<h3 style="margin-top:32px;">Offers</h3>
+{% if offers %}
+<table>
+  <thead>
+    <tr>
+      <th>Product</th>
+      <th>Vendor</th>
+      <th>Price</th>
+      <th>Currency</th>
+      <th>Quantity</th>
+      <th>Captured</th>
+    </tr>
+  </thead>
+  <tbody>
+    {% for offer in offers %}
+    <tr>
+      <td>{{ offer.product_name }}</td>
+      <td>{{ offer.vendor_name }}</td>
+      <td>{{ '%.2f'|format(offer.price) }}</td>
+      <td>{{ offer.currency }}</td>
+      <td>{{ offer.quantity or '-' }}</td>
+      <td>{{ offer.captured_at }}</td>
+    </tr>
+    {% endfor %}
+  </tbody>
+</table>
+{% else %}
+<div class="empty-state">No offers extracted from this document.</div>
+{% endif %}
+
+<h3 style="margin-top:32px;">Metadata</h3>
+<div class="detail-metadata">{{ document.extra | tojson(indent=2) }}</div>
+{% endblock %}

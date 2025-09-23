@@ -12,8 +12,10 @@ Requires-Dist: alembic>=1.13.0
 Requires-Dist: pydantic-settings>=2.4.0
 Requires-Dist: pandas>=2.2.0
 Requires-Dist: openpyxl>=3.1.2
+Requires-Dist: xlrd>=2.0.1
 Requires-Dist: python-multipart>=0.0.9
 Requires-Dist: tenacity>=8.2.3
+Requires-Dist: jinja2>=3.1.0
 Provides-Extra: ocr
 Requires-Dist: pytesseract>=0.3.10; extra == "ocr"
 Requires-Dist: pillow>=10.0.0; extra == "ocr"
@@ -21,6 +23,10 @@ Provides-Extra: pdf
 Requires-Dist: pypdf>=4.0.0; extra == "pdf"
 Provides-Extra: llm
 Requires-Dist: openai>=1.40.0; extra == "llm"
+Provides-Extra: dev
+Requires-Dist: pytest>=8.3.0; extra == "dev"
+Requires-Dist: pytest-cov>=5.0.0; extra == "dev"
+Requires-Dist: httpx>=0.27.0; extra == "dev"
 
 # Pricebot Backend
 
@@ -43,12 +49,41 @@ uvicorn app.main:app --reload
 ```
 
 ### CLI Ingestion
-Parse a spreadsheet and persist offers into the local database:
+Parse source files and persist offers into the local database:
 ```bash
+# Excel/CSV
 python -m app.cli.ingest "../Raw Data from Abdursajid.xlsx" --vendor "Raw Vendor"
+
+# WhatsApp text export (force the chat parser)
+python -m app.cli.ingest WAbot/whatsapp_business_chat_data.txt --processor whatsapp_text
+
+# Image or PDF price sheet (requires `pip install -e .[ocr,pdf]`)
+python -m app.cli.ingest vendor_sheet.png --processor document_text --vendor "Sample Vendor"
+
+# Review ingested documents
+python -m app.cli.list_documents --limit 20
+```
+
+List registered processors:
+```bash
+python - <<'PY'
+from app.ingestion import registry
+print(sorted(registry.processors))
+PY
 ```
 
 The default configuration uses a local SQLite database (`pricebot.db`). Override settings via environment variables as defined in `app/core/config.py`.
+
+### Testing
+```bash
+pip install -e .[dev]
+pytest
+```
+
+### Deployment
+- `Procfile` runs `uvicorn app.main:app` (compatible with Railway/Heroku dynos).
+- `railway.json` configures the Railway service with health checks hitting `/health`.
+- Set environment variables (`DATABASE_URL`, `OPENAI_API_KEY`, etc.) through your hosting platform.
 
 ## Repository Layout
 - `app/core`: configuration helpers.
@@ -57,4 +92,3 @@ The default configuration uses a local SQLite database (`pricebot.db`). Override
 - `app/ingestion`: modular ingestion processors that translate raw files into normalized offers.
 - `app/services`: higher-level business logic for persisting and querying data.
 - `docs/`: design documents, including the schema draft.
-

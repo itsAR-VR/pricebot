@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from datetime import datetime, timezone
 from typing import Iterable
 
 from sqlmodel import Session, select
@@ -15,7 +16,13 @@ class OfferIngestionService:
     def __init__(self, session: Session) -> None:
         self.session = session
 
-    def ingest(self, offers: Iterable[RawOffer], *, vendor_name: str | None = None) -> list[models.Offer]:
+    def ingest(
+        self,
+        offers: Iterable[RawOffer],
+        *,
+        vendor_name: str | None = None,
+        source_document: models.SourceDocument | None = None,
+    ) -> list[models.Offer]:
         persisted_offers: list[models.Offer] = []
         vendor_cache: dict[str, models.Vendor] = {}
 
@@ -31,14 +38,16 @@ class OfferIngestionService:
                 quantity=payload.quantity,
                 condition=payload.condition,
                 location=payload.warehouse,
-                captured_at=payload.captured_at,
+                captured_at=self._normalize_utc(payload.captured_at),
                 notes=payload.notes,
                 raw_payload=payload.raw_payload,
+                source_document_id=source_document.id if source_document else None,
             )
             self.session.add(offer)
+            self.session.flush()
+            self._record_price_history(offer)
             persisted_offers.append(offer)
 
-        self.session.flush()
         return persisted_offers
 
     def _get_or_create_vendor(
@@ -108,3 +117,50 @@ class OfferIngestionService:
             self.session.add(alias)
 
         return product
+
+    def _record_price_history(self, offer: models.Offer) -> None:
+        """Maintain price history spans for the given offer."""
+
+        statement = (
+            select(models.PriceHistory)
+            .where(
+                (models.PriceHistory.product_id == offer.product_id)
+                & (models.PriceHistory.vendor_id == offer.vendor_id)
+                & (models.PriceHistory.valid_to.is_(None))
+            )
+            .order_by(models.PriceHistory.valid_from.desc())
+        )
+        open_entry = self.session.exec(statement).first()
+
+        captured_at = self._normalize_utc(offer.captured_at)
+
+        if open_entry:
+            open_entry.valid_from = self._normalize_utc(open_entry.valid_from)
+            if open_entry.valid_to is not None:
+                open_entry.valid_to = self._normalize_utc(open_entry.valid_to)
+            if (
+                open_entry.price == offer.price
+                and open_entry.currency == offer.currency
+                and captured_at >= open_entry.valid_from
+            ):
+                return
+
+            if captured_at >= open_entry.valid_from:
+                open_entry.valid_to = captured_at
+
+        history_entry = models.PriceHistory(
+            product_id=offer.product_id,
+            vendor_id=offer.vendor_id,
+            price=offer.price,
+            currency=offer.currency,
+            valid_from=captured_at,
+            valid_to=open_entry.valid_from if open_entry and captured_at < open_entry.valid_from else None,
+            source_offer_id=offer.id,
+        )
+        self.session.add(history_entry)
+
+    @staticmethod
+    def _normalize_utc(value: datetime) -> datetime:
+        if value.tzinfo is None:
+            return value
+        return value.astimezone(timezone.utc).replace(tzinfo=None)
