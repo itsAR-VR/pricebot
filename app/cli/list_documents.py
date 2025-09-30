@@ -28,23 +28,23 @@ def main(argv: list[str] | None = None) -> int:
     with get_session() as session:
         documents = session.exec(statement).all()
 
-    if not documents:
-        print("No documents found")
-        return 0
+        if not documents:
+            print("No documents found")
+            return 0
 
-    headers = ["ID", "File", "Processor", "Status", "Offers", "Started", "Completed"]
-    rows = [
-        [
-            str(document.id),
-            document.file_name,
-            document.file_type,
-            document.status,
-            str(len(document.offers or [])),
-            _fmt(document.ingest_started_at),
-            _fmt(document.ingest_completed_at),
+        headers = ["ID", "File", "Processor", "Status", "Offers", "Started", "Completed"]
+        rows = [
+            [
+                str(document.id),
+                document.file_name,
+                document.file_type,
+                document.status,
+                str(len(document.offers or [])),
+                _fmt(document.ingest_started_at),
+                _fmt(document.ingest_completed_at),
+            ]
+            for document in documents
         ]
-        for document in documents
-    ]
 
     _print_table(headers, rows)
     return 0
