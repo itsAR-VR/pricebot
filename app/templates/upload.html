@@ -1,5 +1,6 @@
 <!DOCTYPE html>
 <html lang="en">
+
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -104,6 +105,8 @@
             font-weight: 600;
             cursor: pointer;
             transition: transform 0.2s ease, box-shadow 0.2s ease;
+            display: inline-block;
+            text-align: center;
         }
 
         .btn:hover {
@@ -288,6 +291,7 @@
         }
     </style>
 </head>
+
 <body>
     <div class="container">
         <div class="header">
@@ -300,9 +304,9 @@
                 <div class="upload-icon">📁</div>
                 <h2>Drag & Drop Files Here</h2>
                 <p>or click to browse</p>
-                <button class="btn" onclick="document.getElementById('fileInput').click()">
+                <label for="fileInput" class="btn" onclick="event.stopPropagation()">
                     Choose Files
-                </button>
+                </label>
                 <p class="supported-formats">
                     Supported: Excel (.xlsx, .xls), CSV, PDF, Images (JPG, PNG), Text
                 </p>
@@ -317,7 +321,8 @@
             <form id="uploadForm" style="margin-top: 32px;">
                 <div class="form-group">
                     <label for="vendorName">Vendor Name*</label>
-                    <input type="text" id="vendorName" name="vendorName" placeholder="e.g., Abdursajid, SB Technology" required>
+                    <input type="text" id="vendorName" name="vendorName" placeholder="e.g., Abdursajid, SB Technology"
+                        required>
                 </div>
 
                 <div class="form-group">
@@ -385,8 +390,6 @@
         let selectedFiles = [];
 
         // Drag and drop
-        dropZone.addEventListener('click', () => fileInput.click());
-        
         dropZone.addEventListener('dragover', (e) => {
             e.preventDefault();
             dropZone.classList.add('dragover');
@@ -500,17 +503,17 @@
                 uploadBtn.disabled = false;
 
                 if (errorCount === 0) {
-                    showResult('success', '✅ Upload Successful!', 
+                    showResult('success', '✅ Upload Successful!',
                         `Successfully processed ${successCount} file(s) for vendor "${vendorName}". ` +
                         `<a href="/admin/documents" style="color: inherit; text-decoration: underline;">View documents</a>`);
-                    
+
                     // Reset form
                     selectedFiles = [];
                     fileInput.value = '';
                     fileInfo.style.display = 'none';
                     uploadForm.reset();
                 } else {
-                    showResult('error', '⚠️ Upload completed with errors', 
+                    showResult('error', '⚠️ Upload completed with errors',
                         `Success: ${successCount}, Failed: ${errorCount}<br><br>` +
                         `Errors:<br>${errors.join('<br>')}`);
                 }
@@ -524,4 +527,5 @@
         }
     </script>
 </body>
+
 </html>
