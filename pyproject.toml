@@ -25,11 +25,11 @@ dependencies = [
 
 [project.optional-dependencies]
 ocr = [
-    "pytesseract>=0.3.10",
-    "pillow>=10.0.0"
+    "openai>=1.40.0"  # GPT-4o/GPT-5 for vision and OCR
 ]
 pdf = [
-    "pypdf>=4.0.0"
+    "pypdf>=4.0.0",
+    "openai>=1.40.0"  # GPT-4o/GPT-5 for scanned PDFs
 ]
 llm = [
     "openai>=1.40.0"
