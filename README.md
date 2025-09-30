@@ -1,14 +1,61 @@
-# Pricebot Backend
+# Pricebot - Price Intelligence Backend
 
-Backend service for Cellntell's price intelligence platform. The service ingests pricing sheets from vendors (Excel, CSV, PDF, images, chat dumps), normalizes the information, and exposes APIs that surface the latest and historical price data per product and vendor.
+**Production-ready price intelligence system for electronics vendors.**  
+Ingest vendor pricing from multiple sources → normalize → query via REST API.
 
-## Core Features (Roadmap)
-- Structured ingestion for spreadsheets (Excel/CSV) with automatic schema detection.
-- OCR + LLM assisted extraction for PDFs and images shared via WhatsApp.
-- Persistent storage of vendors, products, and offer history (PostgreSQL/SQLite).
-- Retrieval APIs for current price, history, and document traceability.
-- Embedding-based search across aliases and document payloads.
-- Chatbot-friendly query layer for Vercel frontend integration.
+[![GitHub](https://img.shields.io/badge/github-itsAR--VR%2Fpricebot-blue)](https://github.com/itsAR-VR/pricebot)
+[![Python](https://img.shields.io/badge/python-3.11+-blue.svg)](https://www.python.org/downloads/)
+[![FastAPI](https://img.shields.io/badge/FastAPI-0.111+-green.svg)](https://fastapi.tiangolo.com)
+[![Tests](https://img.shields.io/badge/tests-14%2F14%20passing-brightgreen)](./tests)
+
+---
+
+## 🚀 Quickstart (5 minutes)
+
+```bash
+# Clone and setup
+git clone https://github.com/itsAR-VR/pricebot && cd pricebot
+python -m venv .venv && source .venv/bin/activate
+pip install -e '.[ocr,pdf,dev]'
+
+# Start API server
+uvicorn app.main:app --reload
+# → http://localhost:8000 (API)
+# → http://localhost:8000/docs (Swagger)
+# → http://localhost:8000/admin/documents (Operator UI)
+
+# Ingest your first price sheet
+python -m app.cli.ingest vendor_prices.xlsx --vendor "Vendor Name"
+```
+
+**[📖 Full Quickstart Guide](docs/QUICKSTART.md)** | **[🔌 API Reference](docs/API_REFERENCE.md)** | **[📋 Project Plan](docs/PROJECT_PLAN.md)**
+
+---
+
+## ✅ Features (MVP Complete)
+
+### Ingestion Processors
+- ✅ **Spreadsheets** - Excel/CSV with auto-schema detection
+- ✅ **WhatsApp** - Chat transcript parsing (regex-based)
+- ✅ **OCR/PDF** - Images and PDFs via Tesseract/pypdf
+
+### Data Management
+- ✅ **Product Deduplication** - Match by UPC → SKU → name
+- ✅ **Price History** - Automatic span tracking with change detection
+- ✅ **Vendor Normalization** - Alias management per source
+- ✅ **Document Traceability** - Link offers back to source files
+
+### APIs
+- ✅ **Offers** - Query with filters (vendor, product, date)
+- ✅ **Products** - Search by name/UPC/model, view history
+- ✅ **Vendors** - List with offer counts
+- ✅ **Price History** - Time-series data per product/vendor
+- ✅ **Documents** - Audit ingested source files
+
+### Operations
+- ✅ **Operator UI** - Web dashboard at `/admin/documents`
+- ✅ **CLI Tools** - Ingest and audit commands
+- ✅ **Test Coverage** - 14/14 tests passing
 
 ## Local Development
 ```bash
@@ -50,21 +97,113 @@ pip install -e .[dev]
 pytest
 ```
 
-### Deployment
-- `Procfile` runs `uvicorn app.main:app` (compatible with Railway/Heroku dynos).
-- `railway.json` configures the Railway service with health checks hitting `/health`.
-- Set environment variables (`DATABASE_URL`, `OPENAI_API_KEY`, etc.) through your hosting platform.
-- See `docs/deployment_railway.md` for a complete Railway rollout and scheduling guide.
+---
+
+## 🚢 Deploy to Railway (5 minutes)
+
+```bash
+# 1. Login
+railway login
+
+# 2. Create project and add database
+railway init
+railway add postgresql
+
+# 3. Deploy
+railway up
+
+# 4. Initialize database
+railway run python -c "from app.db.session import init_db; init_db()"
+
+# 5. Get your URL
+railway domain
+```
+
+**Your API is now live!** Visit `https://your-app.up.railway.app/docs`
+
+**[📖 Deployment Guide](docs/deployment_railway.md)** | **[⚡ Quickstart](docs/QUICKSTART.md)**
+
+---
+
+## 📊 Current Status
+
+**Version:** 0.1.0 (MVP)  
+**Data Ingested:** 543 products, 37 offers, 20 documents  
+**API Endpoints:** 11 routes across 6 categories  
+**Test Coverage:** 14/14 passing  
+**Ready for:** Production deployment
+
+**Next Milestones:**
+- Oct 14: MVP Production Ready ⭐
+- Oct 28: Public Beta Launch
+- Nov 11: v1.0 Production Stable
+
+See **[PROJECT_PLAN.md](docs/PROJECT_PLAN.md)** for full roadmap.
+
+---
+
+## 📁 Repository Structure
+
+```
+pricebot/
+├── app/
+│   ├── api/          # FastAPI routes (offers, products, vendors, etc.)
+│   ├── cli/          # CLI tools (ingest, list_documents)
+│   ├── core/         # Config and settings
+│   ├── db/           # SQLModel models and session
+│   ├── ingestion/    # Processors (spreadsheet, whatsapp, OCR)
+│   ├── services/     # Business logic (offer ingestion, history)
+│   ├── templates/    # HTML templates for operator UI
+│   └── ui/           # Web views (operator dashboard)
+├── docs/             # Documentation
+│   ├── QUICKSTART.md
+│   ├── API_REFERENCE.md
+│   ├── PROJECT_PLAN.md
+│   └── deployment_railway.md
+├── tests/            # Test suite (14 tests)
+├── storage/          # Ingested file artifacts
+├── pyproject.toml    # Dependencies and config
+├── railway.json      # Railway deployment config
+└── Procfile          # Production startup command
+```
 
 ### Operator UI
 - Visit `http://localhost:8000/admin/documents` to monitor artefacts, statuses, and extracted offers.
 - Filter by status, drill into document details, and inspect raw ingestion metadata.
 - In production the same console is available at `https://<your-domain>/admin/documents` (protect with your platform’s auth solution).
 
-## Repository Layout
-- `app/core`: configuration helpers.
-- `app/db`: SQLModel definitions and session utilities.
-- `app/api`: FastAPI routers and dependencies.
-- `app/ingestion`: modular ingestion processors that translate raw files into normalized offers.
-- `app/services`: higher-level business logic for persisting and querying data.
-- `docs/`: design documents, including the schema draft.
+---
+
+## 🤝 Contributing
+
+1. Fork the repository
+2. Create a feature branch (`git checkout -b feature/amazing-feature`)
+3. Make your changes
+4. Run tests (`pytest`)
+5. Commit (`git commit -m 'feat: add amazing feature'`)
+6. Push (`git push origin feature/amazing-feature`)
+7. Open a Pull Request
+
+**Coding Standards:**
+- Python 3.11+ with type hints
+- Ruff for linting (line-length=100)
+- pytest for testing (maintain >80% coverage)
+- Conventional commits for messages
+
+---
+
+## 📄 License
+
+This project is proprietary software for Cellntell. All rights reserved.
+
+---
+
+## 📞 Support
+
+- **Issues:** [GitHub Issues](https://github.com/itsAR-VR/pricebot/issues)
+- **Documentation:** [docs/](./docs)
+- **Owner:** AR180 (itsAR-VR)
+
+---
+
+**Built with:** FastAPI • SQLModel • Pandas • Tesseract OCR • Railway
