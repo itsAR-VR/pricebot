@@ -23,6 +23,7 @@ app.include_router(vendors.router)
 app.include_router(price_history.router)
 app.include_router(documents.router)
 app.include_router(operator_views.router)
+app.include_router(operator_views.upload_router)
 
 
 @app.get("/", summary="Service metadata")

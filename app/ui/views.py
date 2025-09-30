@@ -19,6 +19,16 @@ router = APIRouter(prefix="/admin", tags=["operator"], include_in_schema=False)
 
 _templates = Jinja2Templates(directory=str(Path(__file__).resolve().parent.parent / "templates"))
 
+# Add upload page route (no prefix)
+upload_router = APIRouter(tags=["upload"], include_in_schema=False)
+
+
+@upload_router.get("/", response_class=HTMLResponse)
+@upload_router.get("/upload", response_class=HTMLResponse)
+async def upload_page(request: Request) -> HTMLResponse:
+    """Simple upload interface for price sheets."""
+    return _templates.TemplateResponse(request, "upload.html", {"request": request})
+
 
 @router.get("/documents", response_class=HTMLResponse)
 async def documents_dashboard(
