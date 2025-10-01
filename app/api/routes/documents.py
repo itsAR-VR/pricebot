@@ -1,11 +1,13 @@
 import logging
-from datetime import datetime
+import re
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Optional
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, UploadFile
 from pydantic import BaseModel
+from sqlalchemy.exc import IntegrityError
 from sqlmodel import Session, select
 
 from app.api.deps import get_db
@@ -19,6 +21,25 @@ router = APIRouter(prefix="/documents", tags=["documents"])
 logger = logging.getLogger(__name__)
 
 
+
+_SANITIZE_PATTERN = re.compile(r"[^A-Za-z0-9_.-]")
+
+def _sanitize_filename_for_storage(name: str) -> str:
+    cleaned = (name or "uploaded_file").strip()
+    sanitized = _SANITIZE_PATTERN.sub("_", cleaned)
+    if not sanitized or set(sanitized) <= {"_", "."}:
+        return "uploaded_file"
+    return sanitized
+
+
+def _resolve_storage_root(storage_dir: Path) -> Path:
+    try:
+        return storage_dir.resolve(strict=False)
+    except OSError as exc:  # pragma: no cover - defensive
+        logger.warning("Failed to resolve storage directory %s: %s", storage_dir, exc)
+        return storage_dir.absolute()
+
+
 @router.post("/upload", summary="Upload and process a price document")
 async def upload_document(
     file: UploadFile = File(...),
@@ -28,7 +49,7 @@ async def upload_document(
 ) -> dict:
     """
     Upload a price sheet document (Excel, CSV, PDF, image, or text file).
-    
+
     - **file**: The document file to upload
     - **vendor_name**: Name of the vendor (e.g., "Abdursajid", "SB Technology")
     - **processor**: Optional processor type override (spreadsheet, document_text, whatsapp_text)
@@ -39,11 +60,12 @@ async def upload_document(
         vendor_name,
         processor or "auto",
     )
-    logger.debug("Processor override requested: %s", processor)
-    # Determine processor
+
+    original_name = Path(file.filename or "uploaded_file").name
+    file_ext = Path(original_name).suffix.lower()
+
     if not processor or processor == "auto":
         # Auto-detect based on file extension
-        file_ext = Path(file.filename or "").suffix.lower()
         if file_ext in {".xlsx", ".xls", ".csv"}:
             processor_name = "spreadsheet"
         elif file_ext in {".pdf", ".jpg", ".jpeg", ".png"}:
@@ -60,7 +82,6 @@ async def upload_document(
 
     logger.debug("Processor selected: %s", processor_name)
 
-    # Get processor; raise a 400 if registry has no match
     try:
         processor_instance = registry.get(processor_name)
     except KeyError as exc:  # pragma: no cover - defensive
@@ -68,68 +89,86 @@ async def upload_document(
             status_code=400,
             detail=f"Unknown processor: {processor_name}. Available: {list(registry.processors.keys())}"
         ) from exc
-    
-    # Save file to storage
+
     storage_dir = Path(settings.ingestion_storage_dir)
     storage_dir.mkdir(parents=True, exist_ok=True)
-    
-    timestamp = datetime.utcnow().strftime("%Y%m%dT%H%M%SZ")
-    original_name = Path(file.filename or "uploaded_file").name  # strip any directories
-    safe_filename = f"{timestamp}_{original_name}"
-    file_path = storage_dir / safe_filename
-    
-    # Write uploaded file
-    content = await file.read()
-    file_path.write_bytes(content)
-    logger.debug("Saved upload to %s (%d bytes)", file_path, len(content))
+    storage_root = _resolve_storage_root(storage_dir)
 
-    # Create source document record
+    now_utc = datetime.now(timezone.utc)
+    timestamp = now_utc.strftime("%Y%m%dT%H%M%SZ")
+    safe_name = _sanitize_filename_for_storage(original_name)
+    storage_filename = f"{timestamp}_{safe_name}"
+    file_path = storage_root / storage_filename
+
+    content = await file.read()
+    try:
+        file_path.write_bytes(content)
+    except OSError as exc:
+        logger.exception("Failed to persist uploaded file to %s", file_path)
+        raise HTTPException(status_code=500, detail="Failed to persist uploaded file to storage") from exc
+
+    storage_path_value = file_path.as_posix()
+    logger.info("Saved upload to %s (%d bytes)", storage_path_value, len(content))
+
+    metadata_extra = {
+        "original_filename": original_name,
+        "original_path": storage_path_value,
+        "storage_filename": storage_filename,
+        "processor": processor_name,
+        "declared_vendor": vendor_name,
+        "file_size": len(content),
+    }
+
     source_doc = models.SourceDocument(
         file_name=original_name,
-        file_type=Path(original_name).suffix.lower(),
-        storage_path=str(file_path.resolve()),
+        file_type=file_ext or processor_name,
+        storage_path=storage_path_value,
         status="processing",
-        ingest_started_at=datetime.utcnow(),
-        extra={
-            "original_path": str(file_path.resolve()),
-            "processor": processor_name,
-            "declared_vendor": vendor_name,
-        },
+        ingest_started_at=now_utc,
+        extra=metadata_extra,
     )
     session.add(source_doc)
-    session.commit()
+    try:
+        session.commit()
+    except IntegrityError as exc:
+        session.rollback()
+        logger.exception("Failed to persist source document metadata for %s", storage_path_value)
+        file_path.unlink(missing_ok=True)
+        raise HTTPException(status_code=500, detail="Failed to persist document metadata") from exc
     session.refresh(source_doc)
-    logger.info("Source document persisted: id=%s path=%s", source_doc.id, file_path)
+    logger.info("Source document persisted: id=%s path=%s", source_doc.id, storage_path_value)
 
-    # Process the file
     try:
         logger.info(
             "Starting ingestion for document %s using %s",
             source_doc.id,
             processor_name,
         )
-        # Process file (pass Path and vendor context)
         result = processor_instance.process(file_path, context={"vendor_name": vendor_name})
 
-        # Ingest offers
         offer_service = OfferIngestionService(session)
         persisted = offer_service.ingest(
             offers=result.offers,
             vendor_name=vendor_name,
             source_document=source_doc,
         )
-        logger.info("Ingestion finished: document_id=%s offers=%d warnings=%d", source_doc.id, len(persisted), len(result.errors))
+        if persisted:
+            source_doc.vendor_id = persisted[0].vendor_id
+        logger.info(
+            "Ingestion finished: document_id=%s offers=%d warnings=%d",
+            source_doc.id,
+            len(persisted),
+            len(result.errors),
+        )
 
-        # Attach any non-fatal ingestion errors to document metadata
         if result.errors:
             logger.warning("Ingestion warnings for document %s: %s", source_doc.id, result.errors)
             if source_doc.extra is None:
                 source_doc.extra = {}
             source_doc.extra["ingestion_errors"] = result.errors
 
-        # Update document status
         source_doc.status = "processed" if not result.errors else "processed_with_warnings"
-        source_doc.ingest_completed_at = datetime.utcnow()
+        source_doc.ingest_completed_at = datetime.now(timezone.utc)
         session.commit()
         logger.info("Upload completed: document_id=%s status=%s", source_doc.id, source_doc.status)
 
@@ -143,9 +182,8 @@ async def upload_document(
     except Exception as e:
         session.rollback()
         logger.exception("Upload processing failed for document %s", source_doc.id)
-        # Mark as failed and surface a JSON error response
         source_doc.status = "failed"
-        source_doc.ingest_completed_at = datetime.utcnow()
+        source_doc.ingest_completed_at = datetime.now(timezone.utc)
         if source_doc.extra:
             source_doc.extra["errors"] = [str(e)]
         else:
@@ -154,6 +192,7 @@ async def upload_document(
         session.commit()
 
         raise HTTPException(status_code=500, detail=f"Processing failed: {str(e)}")
+
 
 
 class DocumentOut(BaseModel):

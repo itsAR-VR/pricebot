@@ -1,3 +1,21 @@
+## 🛠️ Regression Fix – October 10, 2025
+
+**Status:** ✅ Verified locally
+
+### Issue
+- Uploads with unusual filenames triggered a 500 because the resolved storage path became `NULL`, breaking the `source_documents.storage_path` constraint.
+
+### Fixes
+- Sanitize incoming filenames and build a deterministic storage key before writing the file.
+- Resolve storage directory to an absolute path and guard metadata commits with cleanup on failure.
+- Capture persisted vendor IDs, enrich logging, and surface file metadata for debugging.
+- Added `tests/test_upload_flow.py::test_upload_handles_weird_filename` to cover the regression.
+
+### Validation
+- `python3 -m pytest`
+
+---
+
 ## 🔄 Regression Fix – October 8, 2025
 
 **Status:** ✅ Verified end-to-end
