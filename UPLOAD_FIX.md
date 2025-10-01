@@ -1,3 +1,19 @@
+## 🔄 Regression Fix – October 8, 2025
+
+**Status:** ✅ Verified end-to-end
+
+### Issues Fixed
+- Restored the upload UI by exporting `upload_router`, serving the page at `/upload`, and redirecting `/` requests to the UI instead of JSON metadata.
+- Added structured logging inside `POST /documents/upload` so we can trace processor selection, file persistence, ingestion activity, and failure states.
+- Extended the E2E coverage with `tests/test_upload_flow.py` to confirm uploads create source documents, vendors, offers, and write the file to storage.
+- Hardened the frontend error handler to surface API errors gracefully when uploads fail downstream.
+
+### Validation Steps
+- `python3 -m pytest`
+- Verified storage path exists and is writable (`app/core/config.py` ➜ `settings.ingestion_storage_dir`).
+- Manual Test: `curl -F "file=@sample.csv" -F "vendor_name=CLI" http://localhost:8000/documents/upload` (returns success payload).
+
+---
 # Upload Interface Fix - RESOLVED ✅
 
 **Date:** September 30, 2025  
@@ -277,3 +293,8 @@ curl -X POST "https://web-production-cd557.up.railway.app/documents/upload" \
 **Your Pricebot is now fully operational!** 🚀
 
 **Test it now:** https://web-production-cd557.up.railway.app/
+
+
+
+
+

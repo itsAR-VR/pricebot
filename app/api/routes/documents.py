@@ -1,3 +1,4 @@
+import logging
 from datetime import datetime
 from pathlib import Path
 from typing import Optional
@@ -15,6 +16,7 @@ from app.ingestion import registry
 from app.services.offers import OfferIngestionService
 
 router = APIRouter(prefix="/documents", tags=["documents"])
+logger = logging.getLogger(__name__)
 
 
 @router.post("/upload", summary="Upload and process a price document")
@@ -31,6 +33,13 @@ async def upload_document(
     - **vendor_name**: Name of the vendor (e.g., "Abdursajid", "SB Technology")
     - **processor**: Optional processor type override (spreadsheet, document_text, whatsapp_text)
     """
+    logger.info(
+        "Upload request received: filename=%s vendor=%s processor=%s",
+        file.filename,
+        vendor_name,
+        processor or "auto",
+    )
+    logger.debug("Processor override requested: %s", processor)
     # Determine processor
     if not processor or processor == "auto":
         # Auto-detect based on file extension
@@ -48,78 +57,103 @@ async def upload_document(
             )
     else:
         processor_name = processor
-    
-    # Get processor
-    proc_cls = registry.get(processor_name)
-    if not proc_cls:
+
+    logger.debug("Processor selected: %s", processor_name)
+
+    # Get processor; raise a 400 if registry has no match
+    try:
+        processor_instance = registry.get(processor_name)
+    except KeyError as exc:  # pragma: no cover - defensive
         raise HTTPException(
             status_code=400,
             detail=f"Unknown processor: {processor_name}. Available: {list(registry.processors.keys())}"
-        )
+        ) from exc
     
     # Save file to storage
     storage_dir = Path(settings.ingestion_storage_dir)
     storage_dir.mkdir(parents=True, exist_ok=True)
     
     timestamp = datetime.utcnow().strftime("%Y%m%dT%H%M%SZ")
-    safe_filename = f"{timestamp}_{file.filename}"
+    original_name = Path(file.filename or "uploaded_file").name  # strip any directories
+    safe_filename = f"{timestamp}_{original_name}"
     file_path = storage_dir / safe_filename
     
     # Write uploaded file
     content = await file.read()
     file_path.write_bytes(content)
-    
+    logger.debug("Saved upload to %s (%d bytes)", file_path, len(content))
+
     # Create source document record
     source_doc = models.SourceDocument(
-        file_name=file.filename or "uploaded_file",
-        file_type=Path(file.filename or "").suffix.lower(),
+        file_name=original_name,
+        file_type=Path(original_name).suffix.lower(),
+        storage_path=str(file_path.resolve()),
         status="processing",
         ingest_started_at=datetime.utcnow(),
-        extra={"original_path": str(file_path), "processor": processor_name, "declared_vendor": vendor_name}
+        extra={
+            "original_path": str(file_path.resolve()),
+            "processor": processor_name,
+            "declared_vendor": vendor_name,
+        },
     )
     session.add(source_doc)
     session.commit()
     session.refresh(source_doc)
-    
+    logger.info("Source document persisted: id=%s path=%s", source_doc.id, file_path)
+
     # Process the file
     try:
-        processor_instance = proc_cls()
-        raw_offers = processor_instance.process(str(file_path))
-        
+        logger.info(
+            "Starting ingestion for document %s using %s",
+            source_doc.id,
+            processor_name,
+        )
+        # Process file (pass Path and vendor context)
+        result = processor_instance.process(file_path, context={"vendor_name": vendor_name})
+
         # Ingest offers
         offer_service = OfferIngestionService(session)
-        offer_service.ingest(
-            offers=raw_offers,
+        persisted = offer_service.ingest(
+            offers=result.offers,
             vendor_name=vendor_name,
-            source_document=source_doc
+            source_document=source_doc,
         )
-        
+        logger.info("Ingestion finished: document_id=%s offers=%d warnings=%d", source_doc.id, len(persisted), len(result.errors))
+
+        # Attach any non-fatal ingestion errors to document metadata
+        if result.errors:
+            logger.warning("Ingestion warnings for document %s: %s", source_doc.id, result.errors)
+            if source_doc.extra is None:
+                source_doc.extra = {}
+            source_doc.extra["ingestion_errors"] = result.errors
+
         # Update document status
-        source_doc.status = "processed"
+        source_doc.status = "processed" if not result.errors else "processed_with_warnings"
         source_doc.ingest_completed_at = datetime.utcnow()
         session.commit()
-        
+        logger.info("Upload completed: document_id=%s status=%s", source_doc.id, source_doc.status)
+
         return {
             "status": "success",
-            "message": f"Processed {len(raw_offers)} offers",
+            "message": f"Processed {len(persisted)} offers",
             "document_id": str(source_doc.id),
-            "offers_count": len(raw_offers)
+            "offers_count": len(persisted),
         }
-    
+
     except Exception as e:
-        # Mark as failed
+        session.rollback()
+        logger.exception("Upload processing failed for document %s", source_doc.id)
+        # Mark as failed and surface a JSON error response
         source_doc.status = "failed"
         source_doc.ingest_completed_at = datetime.utcnow()
         if source_doc.extra:
             source_doc.extra["errors"] = [str(e)]
         else:
             source_doc.extra = {"errors": [str(e)]}
+        session.add(source_doc)
         session.commit()
-        
-        raise HTTPException(
-            status_code=500,
-            detail=f"Processing failed: {str(e)}"
-        )
+
+        raise HTTPException(status_code=500, detail=f"Processing failed: {str(e)}")
 
 
 class DocumentOut(BaseModel):
