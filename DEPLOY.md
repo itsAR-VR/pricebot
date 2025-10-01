@@ -237,6 +237,10 @@ railway up --environment staging
 
 ## Troubleshooting
 
+- **Python runtime < 3.11** – Pricebot targets Python 3.11+. If your deployment image defaults to 3.9, pin 3.11 by exporting `PYTHON_VERSION=3.11` in the build command (see `railway.json`) or base your Dockerfile on a 3.11 image before deploying.
+- **OCR uploads returning 500** – Install the optional extras (`pip install -e '.[ocr,pdf]'`) and include the OS dependency `tesseract-ocr` (Nixpacks package or custom Docker layer) so image/PDF processing works.
+- **Uploads failing after apparent success** – Verify the `/data/storage` volume is mounted and that `INGESTION_STORAGE_DIR` points to it; without a writable volume the API cannot persist source documents.
+
 ### Build Fails
 
 **Error:** `No module named 'app'`
@@ -424,3 +428,8 @@ Now you can:
 ---
 
 **Questions?** Open an issue on [GitHub](https://github.com/itsAR-VR/pricebot/issues)
+
+
+
+
+

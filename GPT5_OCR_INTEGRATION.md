@@ -308,3 +308,8 @@ RuntimeError: GPT-5 OCR failed: Invalid image format
 4. Monitor API usage/costs
 
 **Your Pricebot now uses state-of-the-art AI for OCR!** 🚀
+
+
+
+
+

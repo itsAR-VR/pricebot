@@ -1,3 +1,20 @@
+## 🧱 Upload Collision Fix – October 2, 2025
+
+**Status:** ✅ Verified locally
+
+### Issue
+- Rapid successive uploads with identical filenames reused the timestamp-based storage key.
+- Later files overwrote earlier uploads, leaving multiple documents pointing at the same stored asset.
+
+### Fixes
+- Appended an 8-character `uuid4` suffix to storage filenames in `app/api/routes/documents.py` to guarantee uniqueness within the same second.
+- Added regression coverage with `tests/test_upload_flow.py::test_upload_storage_filenames_unique` to ensure distinct storage paths for identical filenames.
+
+### Validation
+- `python3 -m pytest`
+
+---
+
 ## 🔐 Upload Hardening – October 16, 2025
 
 **Status:** ✅ Verified locally

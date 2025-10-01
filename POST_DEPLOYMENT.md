@@ -459,3 +459,7 @@ echo "🎉 All tests complete!"
 ---
 
 **Need help?** Check the troubleshooting section or open an issue on [GitHub](https://github.com/itsAR-VR/pricebot/issues).
+
+
+
+

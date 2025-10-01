@@ -199,3 +199,6 @@ python -c "from app.db import models; print('OK')"
 ---
 
 **You're ready to ingest vendor price data and serve it via API!** 🚀
+
+
+

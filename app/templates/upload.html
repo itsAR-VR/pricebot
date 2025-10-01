@@ -486,8 +486,17 @@
                         successCount++;
                     } else {
                         errorCount++;
-                        const errorData = await response.json().catch(() => ({ detail: 'Unknown error' }));
-                        errors.push(`${file.name}: ${errorData.detail || 'Upload failed'}`);
+                        // Prefer JSON error, gracefully fall back to text
+                        let message = 'Unknown error';
+                        const ct = response.headers.get('content-type') || '';
+                        if (ct.includes('application/json')) {
+                            const data = await response.json().catch(() => null);
+                            message = (data && (data.detail || data.message)) || message;
+                        } else {
+                            const txt = await response.text().catch(() => '');
+                            if (txt) message = txt.substring(0, 400);
+                        }
+                        errors.push(`${file.name}: ${message}`);
                     }
                 } catch (error) {
                     errorCount++;

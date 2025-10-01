@@ -4,7 +4,7 @@ import tempfile
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Optional
-from uuid import UUID
+from uuid import UUID, uuid4
 
 from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, UploadFile
 from pydantic import BaseModel
@@ -73,6 +73,17 @@ def _ensure_storage_directory(storage_dir: Path) -> Path:
     return storage_root
 
 
+def _remove_file_if_exists(path: Path) -> None:
+    """Best-effort file cleanup compatible with older Python versions."""
+
+    try:
+        path.unlink()
+    except FileNotFoundError:
+        return
+    except OSError:
+        logger.warning("Unable to remove temporary file %s during cleanup", path, exc_info=True)
+
+
 @router.post("/upload", summary="Upload and process a price document")
 async def upload_document(
     file: UploadFile = File(...),
@@ -128,7 +139,8 @@ async def upload_document(
     now_utc = _utc_now()
     timestamp = now_utc.strftime("%Y%m%dT%H%M%SZ")
     safe_name = _sanitize_filename_for_storage(original_name)
-    storage_filename = f"{timestamp}_{safe_name}"
+    unique_suffix = uuid4().hex[-8:]
+    storage_filename = f"{timestamp}_{unique_suffix}_{safe_name}"
     file_path = storage_root / storage_filename
 
     content = await file.read()
@@ -164,14 +176,14 @@ async def upload_document(
     except IntegrityError as exc:
         session.rollback()
         logger.exception("Failed to persist source document metadata for %s", storage_path_value)
-        file_path.unlink(missing_ok=True)
+        _remove_file_if_exists(file_path)
         raise HTTPException(status_code=500, detail="Failed to persist document metadata") from exc
     except SQLAlchemyError as exc:
         session.rollback()
         logger.exception(
             "Database error while saving source document metadata for %s", storage_path_value
         )
-        file_path.unlink(missing_ok=True)
+        _remove_file_if_exists(file_path)
         raise HTTPException(
             status_code=500,
             detail="Failed to persist document metadata due to a database error",

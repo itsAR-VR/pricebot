@@ -1,11 +1,15 @@
 import pathlib
 from pathlib import Path
 
+from datetime import datetime
+from uuid import UUID
+
 from fastapi.testclient import TestClient
 from sqlalchemy.exc import OperationalError
 from sqlmodel import select
 
 from app.api.deps import get_db
+from app.api.routes import documents as documents_route
 from app.core.config import settings
 from app.db import models
 from app.main import app
@@ -148,4 +152,40 @@ def test_upload_handles_generic_database_error(monkeypatch, tmp_path, session):
     assert not any(tmp_path.iterdir())
 
     session.commit = original_commit
+    app.dependency_overrides.pop(get_db, None)
+
+def test_upload_storage_filenames_unique(monkeypatch, tmp_path, session):
+    app.dependency_overrides[get_db] = _override_get_db(session)
+    monkeypatch.setattr(settings, "ingestion_storage_dir", tmp_path)
+
+    fixed_timestamp = datetime(2025, 1, 1, 12, 0, 0)
+    monkeypatch.setattr(documents_route, "_utc_now", lambda: fixed_timestamp)
+
+    uuid_values = iter([UUID(int=1), UUID(int=2), UUID(int=3)])
+    monkeypatch.setattr(documents_route, "uuid4", lambda: next(uuid_values))
+
+    client = TestClient(app)
+    payload = {"vendor_name": "Same Second Vendor"}
+    file_content = "Product,Price\nWidget,9.99\n"
+
+    for _ in range(2):
+        response = client.post(
+            "/documents/upload",
+            files={"file": ("duplicate.csv", file_content, "text/csv")},
+            data=payload,
+        )
+        assert response.status_code == 200
+
+    session.expire_all()
+    documents = session.exec(select(models.SourceDocument)).all()
+    assert len(documents) == 2
+
+    storage_names = {Path(doc.storage_path).name for doc in documents}
+    assert len(storage_names) == 2
+
+    for doc in documents:
+        stored_path = Path(doc.storage_path)
+        assert stored_path.exists()
+        assert stored_path.parent == tmp_path.resolve()
+
     app.dependency_overrides.pop(get_db, None)
