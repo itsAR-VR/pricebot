@@ -4,6 +4,7 @@ from typing import Iterator
 from sqlmodel import Session, SQLModel, create_engine
 
 from app.core.config import settings
+from app.db.migrations import run_schema_migrations
 
 
 connect_args = {}
@@ -14,9 +15,10 @@ engine = create_engine(settings.database_url, echo=False, connect_args=connect_a
 
 
 def init_db() -> None:
-    """Create database tables."""
+    """Create database tables and apply lightweight migrations."""
 
     SQLModel.metadata.create_all(bind=engine)
+    run_schema_migrations(engine)
 
 
 @contextmanager

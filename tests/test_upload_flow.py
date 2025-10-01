@@ -1,6 +1,8 @@
+import pathlib
 from pathlib import Path
 
 from fastapi.testclient import TestClient
+from sqlalchemy.exc import OperationalError
 from sqlmodel import select
 
 from app.api.deps import get_db
@@ -87,4 +89,63 @@ def test_upload_handles_weird_filename(monkeypatch, tmp_path, session):
     assert stored_path.exists()
     assert stored_path.parent == tmp_path.resolve()
 
+    app.dependency_overrides.pop(get_db, None)
+
+
+def test_upload_returns_clear_error_when_storage_unwritable(monkeypatch, tmp_path, session):
+    app.dependency_overrides[get_db] = _override_get_db(session)
+    target_dir = tmp_path / "blocked" / "nested"
+    monkeypatch.setattr(settings, "ingestion_storage_dir", target_dir)
+
+    original_mkdir = pathlib.Path.mkdir
+
+    def fail_mkdir(self, *args, **kwargs):
+        if self == target_dir:
+            raise PermissionError("read-only path")
+        return original_mkdir(self, *args, **kwargs)
+
+    monkeypatch.setattr(pathlib.Path, "mkdir", fail_mkdir)
+
+    client = TestClient(app)
+    response = client.post(
+        "/documents/upload",
+        files={"file": ("sample.csv", 'Product,Price\nWidget,9.99\n', "text/csv")},
+        data={"vendor_name": "Vendor"},
+    )
+
+    assert response.status_code == 500
+    body = response.json()
+    assert "not writable" in body["detail"].lower()
+
+    app.dependency_overrides.pop(get_db, None)
+
+
+def test_upload_handles_generic_database_error(monkeypatch, tmp_path, session):
+    app.dependency_overrides[get_db] = _override_get_db(session)
+    monkeypatch.setattr(settings, "ingestion_storage_dir", tmp_path)
+
+    original_commit = session.commit
+    call_count = {"count": 0}
+
+    def failing_commit():
+        call_count["count"] += 1
+        if call_count["count"] == 1:
+            raise OperationalError("INSERT", {}, Exception("boom"))
+        return original_commit()
+
+    session.commit = failing_commit  # type: ignore[assignment]
+
+    client = TestClient(app)
+    response = client.post(
+        "/documents/upload",
+        files={"file": ("sample.csv", 'Product,Price\nWidget,9.99\n', "text/csv")},
+        data={"vendor_name": "Vendor"},
+    )
+
+    assert response.status_code == 500
+    body = response.json()
+    assert "database" in body["detail"].lower()
+    assert not any(tmp_path.iterdir())
+
+    session.commit = original_commit
     app.dependency_overrides.pop(get_db, None)

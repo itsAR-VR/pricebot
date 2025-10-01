@@ -1,3 +1,22 @@
+## 🔐 Upload Hardening – October 16, 2025
+
+**Status:** ✅ Verified locally
+
+### Issue
+- Production uploads returned 500 errors whenever the storage directory was unwritable or the Postgres schema lagged behind the current models.
+- Operators saw only a generic "Internal Server Error" with no path to remediation.
+
+### Fixes
+- Added `_ensure_storage_directory` guard so the API fails fast with a clear error when the configured storage path cannot be created or written to.
+- Wrapped source-document commits in defensive `SQLAlchemyError` handling and preserved failure-state updates.
+- Added lightweight startup migrations (`app/db/migrations.py`) to backfill missing columns on legacy Postgres databases (timestamps, status, extra metadata, and `source_document_id`).
+- Extended upload tests to cover filesystem permission failures and generic database errors; added a migration smoke test for older schemas.
+
+### Validation
+- `python3 -m pytest`
+
+---
+
 ## 🚀 Production Stabilization – October 1, 2025
 
 **Status:** ✅ Verified locally

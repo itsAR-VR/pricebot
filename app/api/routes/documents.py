@@ -1,5 +1,6 @@
 import logging
 import re
+import tempfile
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Optional
@@ -7,7 +8,7 @@ from uuid import UUID
 
 from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, UploadFile
 from pydantic import BaseModel
-from sqlalchemy.exc import IntegrityError
+from sqlalchemy.exc import IntegrityError, SQLAlchemyError
 from sqlmodel import Session, select
 
 from app.api.deps import get_db
@@ -44,6 +45,32 @@ def _resolve_storage_root(storage_dir: Path) -> Path:
     except OSError as exc:  # pragma: no cover - defensive
         logger.warning("Failed to resolve storage directory %s: %s", storage_dir, exc)
         return storage_dir.absolute()
+
+
+def _ensure_storage_directory(storage_dir: Path) -> Path:
+    """Ensure the storage directory exists and is writable."""
+
+    try:
+        storage_dir.mkdir(parents=True, exist_ok=True)
+    except OSError as exc:
+        logger.exception("Unable to create storage directory %s", storage_dir)
+        raise HTTPException(
+            status_code=500, detail=f"Storage directory '{storage_dir}' is not writable"
+        ) from exc
+
+    storage_root = _resolve_storage_root(storage_dir)
+    try:
+        with tempfile.NamedTemporaryFile(
+            dir=storage_root, prefix=".pricebot_write_test", delete=True
+        ):
+            pass
+    except OSError as exc:
+        logger.exception("Storage directory %s lacks write permissions", storage_root)
+        raise HTTPException(
+            status_code=500, detail=f"Storage directory '{storage_root}' is not writable"
+        ) from exc
+
+    return storage_root
 
 
 @router.post("/upload", summary="Upload and process a price document")
@@ -96,9 +123,7 @@ async def upload_document(
             detail=f"Unknown processor: {processor_name}. Available: {list(registry.processors.keys())}"
         ) from exc
 
-    storage_dir = Path(settings.ingestion_storage_dir)
-    storage_dir.mkdir(parents=True, exist_ok=True)
-    storage_root = _resolve_storage_root(storage_dir)
+    storage_root = _ensure_storage_directory(Path(settings.ingestion_storage_dir))
 
     now_utc = _utc_now()
     timestamp = now_utc.strftime("%Y%m%dT%H%M%SZ")
@@ -141,6 +166,16 @@ async def upload_document(
         logger.exception("Failed to persist source document metadata for %s", storage_path_value)
         file_path.unlink(missing_ok=True)
         raise HTTPException(status_code=500, detail="Failed to persist document metadata") from exc
+    except SQLAlchemyError as exc:
+        session.rollback()
+        logger.exception(
+            "Database error while saving source document metadata for %s", storage_path_value
+        )
+        file_path.unlink(missing_ok=True)
+        raise HTTPException(
+            status_code=500,
+            detail="Failed to persist document metadata due to a database error",
+        ) from exc
     session.refresh(source_doc)
     logger.info("Source document persisted: id=%s path=%s", source_doc.id, storage_path_value)
 
@@ -195,8 +230,13 @@ async def upload_document(
         else:
             source_doc.extra = {"errors": [str(e)]}
         session.add(source_doc)
-        session.commit()
-
+        try:
+            session.commit()
+        except SQLAlchemyError:
+            session.rollback()
+            logger.exception(
+                "Failed to persist failure status for document %s", source_doc.id
+            )
         raise HTTPException(status_code=500, detail=f"Processing failed: {str(e)}")
 
 
