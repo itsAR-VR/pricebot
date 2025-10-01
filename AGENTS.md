@@ -10,7 +10,7 @@ Fix the document upload functionality in pricebot that is currently not working.
 - [x] Frontend displays success/failure feedback correctly
 - [x] All tests pass (pytest)
 - [x] Changes committed and pushed to git
-- [ ] Railway deployment succeeds with new changes
+- [x] Railway deployment succeeds with new changes
 
 # Context & Background
 
