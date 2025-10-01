@@ -1,3 +1,20 @@
+## 🚀 Production Stabilization – October 1, 2025
+
+**Status:** ✅ Verified locally
+
+### Issue
+- Uploads returned 500s in production because PostgreSQL rejects timezone-aware timestamps on `source_documents.ingest_started_at`/`ingest_completed_at`.
+
+### Fixes
+- Normalize every ingestion timestamp to timezone-naive UTC before persistence (`app/db/models.py`, ingestion helpers, CLI entrypoint).
+- Updated `/documents/upload` endpoint to use the shared helper so metadata commits succeed on PostgreSQL.
+- Extended the upload flow test to assert naive timestamps for documents and offers to prevent regressions.
+
+### Validation
+- `python3 -m pytest`
+
+---
+
 ## 🛠️ Regression Fix – October 10, 2025
 
 **Status:** ✅ Verified locally

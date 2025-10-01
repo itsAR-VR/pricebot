@@ -39,11 +39,16 @@ def test_upload_endpoint_persists_document(monkeypatch, tmp_path, session):
     document = session.exec(select(models.SourceDocument)).one()
     assert document.file_name == "sample.csv"
     assert document.status in {"processed", "processed_with_warnings"}
+    assert document.ingest_started_at is not None
+    assert document.ingest_started_at.tzinfo is None
+    assert document.ingest_completed_at is not None
+    assert document.ingest_completed_at.tzinfo is None
 
     offers = session.exec(select(models.Offer)).all()
     assert len(offers) == 1
     assert offers[0].price == 9.99
     assert offers[0].vendor.name == "Test Vendor"
+    assert offers[0].captured_at.tzinfo is None
 
     app.dependency_overrides.pop(get_db, None)
 

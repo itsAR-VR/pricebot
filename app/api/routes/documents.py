@@ -21,6 +21,12 @@ router = APIRouter(prefix="/documents", tags=["documents"])
 logger = logging.getLogger(__name__)
 
 
+def _utc_now() -> datetime:
+    """Return a timezone-naive UTC timestamp."""
+
+    now = datetime.now(timezone.utc)
+    return now.replace(tzinfo=None)
+
 
 _SANITIZE_PATTERN = re.compile(r"[^A-Za-z0-9_.-]")
 
@@ -94,7 +100,7 @@ async def upload_document(
     storage_dir.mkdir(parents=True, exist_ok=True)
     storage_root = _resolve_storage_root(storage_dir)
 
-    now_utc = datetime.now(timezone.utc)
+    now_utc = _utc_now()
     timestamp = now_utc.strftime("%Y%m%dT%H%M%SZ")
     safe_name = _sanitize_filename_for_storage(original_name)
     storage_filename = f"{timestamp}_{safe_name}"
@@ -168,7 +174,7 @@ async def upload_document(
             source_doc.extra["ingestion_errors"] = result.errors
 
         source_doc.status = "processed" if not result.errors else "processed_with_warnings"
-        source_doc.ingest_completed_at = datetime.now(timezone.utc)
+        source_doc.ingest_completed_at = _utc_now()
         session.commit()
         logger.info("Upload completed: document_id=%s status=%s", source_doc.id, source_doc.status)
 
@@ -183,7 +189,7 @@ async def upload_document(
         session.rollback()
         logger.exception("Upload processing failed for document %s", source_doc.id)
         source_doc.status = "failed"
-        source_doc.ingest_completed_at = datetime.now(timezone.utc)
+        source_doc.ingest_completed_at = _utc_now()
         if source_doc.extra:
             source_doc.extra["errors"] = [str(e)]
         else:
