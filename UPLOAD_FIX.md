@@ -1,3 +1,90 @@
+## 🧱 Upload Collision Fix – October 2, 2025
+
+**Status:** ✅ Verified locally
+
+### Issue
+- Rapid successive uploads with identical filenames reused the timestamp-based storage key.
+- Later files overwrote earlier uploads, leaving multiple documents pointing at the same stored asset.
+
+### Fixes
+- Appended an 8-character `uuid4` suffix to storage filenames in `app/api/routes/documents.py` to guarantee uniqueness within the same second.
+- Added regression coverage with `tests/test_upload_flow.py::test_upload_storage_filenames_unique` to ensure distinct storage paths for identical filenames.
+
+### Validation
+- `python3 -m pytest`
+
+---
+
+## 🔐 Upload Hardening – October 16, 2025
+
+**Status:** ✅ Verified locally
+
+### Issue
+- Production uploads returned 500 errors whenever the storage directory was unwritable or the Postgres schema lagged behind the current models.
+- Operators saw only a generic "Internal Server Error" with no path to remediation.
+
+### Fixes
+- Added `_ensure_storage_directory` guard so the API fails fast with a clear error when the configured storage path cannot be created or written to.
+- Wrapped source-document commits in defensive `SQLAlchemyError` handling and preserved failure-state updates.
+- Added lightweight startup migrations (`app/db/migrations.py`) to backfill missing columns on legacy Postgres databases (timestamps, status, extra metadata, and `source_document_id`).
+- Extended upload tests to cover filesystem permission failures and generic database errors; added a migration smoke test for older schemas.
+
+### Validation
+- `python3 -m pytest`
+
+---
+
+## 🚀 Production Stabilization – October 1, 2025
+
+**Status:** ✅ Verified locally
+
+### Issue
+- Uploads returned 500s in production because PostgreSQL rejects timezone-aware timestamps on `source_documents.ingest_started_at`/`ingest_completed_at`.
+
+### Fixes
+- Normalize every ingestion timestamp to timezone-naive UTC before persistence (`app/db/models.py`, ingestion helpers, CLI entrypoint).
+- Updated `/documents/upload` endpoint to use the shared helper so metadata commits succeed on PostgreSQL.
+- Extended the upload flow test to assert naive timestamps for documents and offers to prevent regressions.
+
+### Validation
+- `python3 -m pytest`
+
+---
+
+## 🛠️ Regression Fix – October 10, 2025
+
+**Status:** ✅ Verified locally
+
+### Issue
+- Uploads with unusual filenames triggered a 500 because the resolved storage path became `NULL`, breaking the `source_documents.storage_path` constraint.
+
+### Fixes
+- Sanitize incoming filenames and build a deterministic storage key before writing the file.
+- Resolve storage directory to an absolute path and guard metadata commits with cleanup on failure.
+- Capture persisted vendor IDs, enrich logging, and surface file metadata for debugging.
+- Added `tests/test_upload_flow.py::test_upload_handles_weird_filename` to cover the regression.
+
+### Validation
+- `python3 -m pytest`
+
+---
+
+## 🔄 Regression Fix – October 8, 2025
+
+**Status:** ✅ Verified end-to-end
+
+### Issues Fixed
+- Restored the upload UI by exporting `upload_router`, serving the page at `/upload`, and redirecting `/` requests to the UI instead of JSON metadata.
+- Added structured logging inside `POST /documents/upload` so we can trace processor selection, file persistence, ingestion activity, and failure states.
+- Extended the E2E coverage with `tests/test_upload_flow.py` to confirm uploads create source documents, vendors, offers, and write the file to storage.
+- Hardened the frontend error handler to surface API errors gracefully when uploads fail downstream.
+
+### Validation Steps
+- `python3 -m pytest`
+- Verified storage path exists and is writable (`app/core/config.py` ➜ `settings.ingestion_storage_dir`).
+- Manual Test: `curl -F "file=@sample.csv" -F "vendor_name=CLI" http://localhost:8000/documents/upload` (returns success payload).
+
+---
 # Upload Interface Fix - RESOLVED ✅
 
 **Date:** September 30, 2025  
@@ -277,3 +364,8 @@ curl -X POST "https://web-production-cd557.up.railway.app/documents/upload" \
 **Your Pricebot is now fully operational!** 🚀
 
 **Test it now:** https://web-production-cd557.up.railway.app/
+
+
+
+
+

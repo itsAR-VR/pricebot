@@ -14,6 +14,13 @@ from app.db import models
 from app.services.offers import OfferIngestionService
 
 
+def _utc_now() -> datetime:
+    """Return a timezone-naive UTC timestamp."""
+
+    now = datetime.now(timezone.utc)
+    return now.replace(tzinfo=None)
+
+
 def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Ingest a pricing source file into the database")
     parser.add_argument("file", type=Path, help="Path to the source file")
@@ -51,10 +58,11 @@ def main(argv: list[str] | None = None) -> int:
 
     storage_dir = settings.ingestion_storage_dir
     storage_dir.mkdir(parents=True, exist_ok=True)
-    copied_path = storage_dir / f"{datetime.now(timezone.utc).strftime('%Y%m%dT%H%M%SZ')}_{uuid4().hex}{file_path.suffix}"
+    timestamp = datetime.now(timezone.utc)
+    copied_path = storage_dir / f"{timestamp.strftime('%Y%m%dT%H%M%SZ')}_{uuid4().hex}{file_path.suffix}"
     shutil.copy2(file_path, copied_path)
 
-    ingest_started_at = datetime.now(timezone.utc)
+    ingest_started_at = timestamp.replace(tzinfo=None)
     result = processor.process(file_path, context=context)
     if result.errors:
         print("Encountered errors during parsing:")
@@ -64,9 +72,9 @@ def main(argv: list[str] | None = None) -> int:
     init_db()
     with get_session() as session:
         source_metadata = {
-        "original_path": str(file_path.resolve()),
-        "processor": processor.name,
-    }
+            "original_path": str(file_path.resolve()),
+            "processor": processor.name,
+        }
         if args.vendor:
             source_metadata["declared_vendor"] = args.vendor
         if result.errors:
@@ -99,7 +107,7 @@ def main(argv: list[str] | None = None) -> int:
             source_document.status = "failed"
             print("No offers extracted; aborting persistence")
 
-        source_document.ingest_completed_at = datetime.now(timezone.utc)
+        source_document.ingest_completed_at = _utc_now()
         session.flush()
 
     return 0 if result.offers else 2

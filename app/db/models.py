@@ -7,7 +7,9 @@ from sqlmodel import Field, Relationship, SQLModel
 
 
 def _utcnow() -> datetime:
-    return datetime.now(timezone.utc)
+    """Return a timezone-naive UTC timestamp for database storage."""
+
+    return datetime.now(timezone.utc).replace(tzinfo=None)
 
 
 class TimestampMixin(SQLModel):

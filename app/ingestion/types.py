@@ -4,7 +4,9 @@ from typing import Any
 
 
 def now_utc() -> datetime:
-    return datetime.now(timezone.utc)
+    """Return a timezone-naive UTC datetime."""
+
+    return datetime.now(timezone.utc).replace(tzinfo=None)
 
 
 @dataclass(slots=True)

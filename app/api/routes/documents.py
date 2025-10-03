@@ -1,10 +1,14 @@
-from datetime import datetime
+import logging
+import re
+import tempfile
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Optional
-from uuid import UUID
+from uuid import UUID, uuid4
 
 from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, UploadFile
 from pydantic import BaseModel
+from sqlalchemy.exc import IntegrityError, SQLAlchemyError
 from sqlmodel import Session, select
 
 from app.api.deps import get_db
@@ -15,6 +19,69 @@ from app.ingestion import registry
 from app.services.offers import OfferIngestionService
 
 router = APIRouter(prefix="/documents", tags=["documents"])
+logger = logging.getLogger(__name__)
+
+
+def _utc_now() -> datetime:
+    """Return a timezone-naive UTC timestamp."""
+
+    now = datetime.now(timezone.utc)
+    return now.replace(tzinfo=None)
+
+
+_SANITIZE_PATTERN = re.compile(r"[^A-Za-z0-9_.-]")
+
+def _sanitize_filename_for_storage(name: str) -> str:
+    cleaned = (name or "uploaded_file").strip()
+    sanitized = _SANITIZE_PATTERN.sub("_", cleaned)
+    if not sanitized or set(sanitized) <= {"_", "."}:
+        return "uploaded_file"
+    return sanitized
+
+
+def _resolve_storage_root(storage_dir: Path) -> Path:
+    try:
+        return storage_dir.resolve(strict=False)
+    except OSError as exc:  # pragma: no cover - defensive
+        logger.warning("Failed to resolve storage directory %s: %s", storage_dir, exc)
+        return storage_dir.absolute()
+
+
+def _ensure_storage_directory(storage_dir: Path) -> Path:
+    """Ensure the storage directory exists and is writable."""
+
+    try:
+        storage_dir.mkdir(parents=True, exist_ok=True)
+    except OSError as exc:
+        logger.exception("Unable to create storage directory %s", storage_dir)
+        raise HTTPException(
+            status_code=500, detail=f"Storage directory '{storage_dir}' is not writable"
+        ) from exc
+
+    storage_root = _resolve_storage_root(storage_dir)
+    try:
+        with tempfile.NamedTemporaryFile(
+            dir=storage_root, prefix=".pricebot_write_test", delete=True
+        ):
+            pass
+    except OSError as exc:
+        logger.exception("Storage directory %s lacks write permissions", storage_root)
+        raise HTTPException(
+            status_code=500, detail=f"Storage directory '{storage_root}' is not writable"
+        ) from exc
+
+    return storage_root
+
+
+def _remove_file_if_exists(path: Path) -> None:
+    """Best-effort file cleanup compatible with older Python versions."""
+
+    try:
+        path.unlink()
+    except FileNotFoundError:
+        return
+    except OSError:
+        logger.warning("Unable to remove temporary file %s during cleanup", path, exc_info=True)
 
 
 @router.post("/upload", summary="Upload and process a price document")
@@ -26,15 +93,23 @@ async def upload_document(
 ) -> dict:
     """
     Upload a price sheet document (Excel, CSV, PDF, image, or text file).
-    
+
     - **file**: The document file to upload
     - **vendor_name**: Name of the vendor (e.g., "Abdursajid", "SB Technology")
     - **processor**: Optional processor type override (spreadsheet, document_text, whatsapp_text)
     """
-    # Determine processor
+    logger.info(
+        "Upload request received: filename=%s vendor=%s processor=%s",
+        file.filename,
+        vendor_name,
+        processor or "auto",
+    )
+
+    original_name = Path(file.filename or "uploaded_file").name
+    file_ext = Path(original_name).suffix.lower()
+
     if not processor or processor == "auto":
         # Auto-detect based on file extension
-        file_ext = Path(file.filename or "").suffix.lower()
         if file_ext in {".xlsx", ".xls", ".csv"}:
             processor_name = "spreadsheet"
         elif file_ext in {".pdf", ".jpg", ".jpeg", ".png"}:
@@ -48,78 +123,134 @@ async def upload_document(
             )
     else:
         processor_name = processor
-    
-    # Get processor
-    proc_cls = registry.get(processor_name)
-    if not proc_cls:
+
+    logger.debug("Processor selected: %s", processor_name)
+
+    try:
+        processor_instance = registry.get(processor_name)
+    except KeyError as exc:  # pragma: no cover - defensive
         raise HTTPException(
             status_code=400,
             detail=f"Unknown processor: {processor_name}. Available: {list(registry.processors.keys())}"
-        )
-    
-    # Save file to storage
-    storage_dir = Path(settings.ingestion_storage_dir)
-    storage_dir.mkdir(parents=True, exist_ok=True)
-    
-    timestamp = datetime.utcnow().strftime("%Y%m%dT%H%M%SZ")
-    safe_filename = f"{timestamp}_{file.filename}"
-    file_path = storage_dir / safe_filename
-    
-    # Write uploaded file
+        ) from exc
+
+    storage_root = _ensure_storage_directory(Path(settings.ingestion_storage_dir))
+
+    now_utc = _utc_now()
+    timestamp = now_utc.strftime("%Y%m%dT%H%M%SZ")
+    safe_name = _sanitize_filename_for_storage(original_name)
+    unique_suffix = uuid4().hex[-8:]
+    storage_filename = f"{timestamp}_{unique_suffix}_{safe_name}"
+    file_path = storage_root / storage_filename
+
     content = await file.read()
-    file_path.write_bytes(content)
-    
-    # Create source document record
+    try:
+        file_path.write_bytes(content)
+    except OSError as exc:
+        logger.exception("Failed to persist uploaded file to %s", file_path)
+        raise HTTPException(status_code=500, detail="Failed to persist uploaded file to storage") from exc
+
+    storage_path_value = file_path.as_posix()
+    logger.info("Saved upload to %s (%d bytes)", storage_path_value, len(content))
+
+    metadata_extra = {
+        "original_filename": original_name,
+        "original_path": storage_path_value,
+        "storage_filename": storage_filename,
+        "processor": processor_name,
+        "declared_vendor": vendor_name,
+        "file_size": len(content),
+    }
+
     source_doc = models.SourceDocument(
-        file_name=file.filename or "uploaded_file",
-        file_type=Path(file.filename or "").suffix.lower(),
+        file_name=original_name,
+        file_type=file_ext or processor_name,
+        storage_path=storage_path_value,
         status="processing",
-        ingest_started_at=datetime.utcnow(),
-        extra={"original_path": str(file_path), "processor": processor_name, "declared_vendor": vendor_name}
+        ingest_started_at=now_utc,
+        extra=metadata_extra,
     )
     session.add(source_doc)
-    session.commit()
-    session.refresh(source_doc)
-    
-    # Process the file
     try:
-        processor_instance = proc_cls()
-        raw_offers = processor_instance.process(str(file_path))
-        
-        # Ingest offers
-        offer_service = OfferIngestionService(session)
-        offer_service.ingest(
-            offers=raw_offers,
-            vendor_name=vendor_name,
-            source_document=source_doc
-        )
-        
-        # Update document status
-        source_doc.status = "processed"
-        source_doc.ingest_completed_at = datetime.utcnow()
         session.commit()
-        
+    except IntegrityError as exc:
+        session.rollback()
+        logger.exception("Failed to persist source document metadata for %s", storage_path_value)
+        _remove_file_if_exists(file_path)
+        raise HTTPException(status_code=500, detail="Failed to persist document metadata") from exc
+    except SQLAlchemyError as exc:
+        session.rollback()
+        logger.exception(
+            "Database error while saving source document metadata for %s", storage_path_value
+        )
+        _remove_file_if_exists(file_path)
+        raise HTTPException(
+            status_code=500,
+            detail="Failed to persist document metadata due to a database error",
+        ) from exc
+    session.refresh(source_doc)
+    logger.info("Source document persisted: id=%s path=%s", source_doc.id, storage_path_value)
+
+    try:
+        logger.info(
+            "Starting ingestion for document %s using %s",
+            source_doc.id,
+            processor_name,
+        )
+        result = processor_instance.process(file_path, context={"vendor_name": vendor_name})
+
+        offer_service = OfferIngestionService(session)
+        persisted = offer_service.ingest(
+            offers=result.offers,
+            vendor_name=vendor_name,
+            source_document=source_doc,
+        )
+        if persisted:
+            source_doc.vendor_id = persisted[0].vendor_id
+        logger.info(
+            "Ingestion finished: document_id=%s offers=%d warnings=%d",
+            source_doc.id,
+            len(persisted),
+            len(result.errors),
+        )
+
+        if result.errors:
+            logger.warning("Ingestion warnings for document %s: %s", source_doc.id, result.errors)
+            if source_doc.extra is None:
+                source_doc.extra = {}
+            source_doc.extra["ingestion_errors"] = result.errors
+
+        source_doc.status = "processed" if not result.errors else "processed_with_warnings"
+        source_doc.ingest_completed_at = _utc_now()
+        session.commit()
+        logger.info("Upload completed: document_id=%s status=%s", source_doc.id, source_doc.status)
+
         return {
             "status": "success",
-            "message": f"Processed {len(raw_offers)} offers",
+            "message": f"Processed {len(persisted)} offers",
             "document_id": str(source_doc.id),
-            "offers_count": len(raw_offers)
+            "offers_count": len(persisted),
         }
-    
+
     except Exception as e:
-        # Mark as failed
+        session.rollback()
+        logger.exception("Upload processing failed for document %s", source_doc.id)
         source_doc.status = "failed"
-        source_doc.ingest_completed_at = datetime.utcnow()
+        source_doc.ingest_completed_at = _utc_now()
         if source_doc.extra:
             source_doc.extra["errors"] = [str(e)]
         else:
             source_doc.extra = {"errors": [str(e)]}
-        session.commit()
-        
-        raise HTTPException(
-            status_code=500,
-            detail=f"Processing failed: {str(e)}"
-        )
+        session.add(source_doc)
+        try:
+            session.commit()
+        except SQLAlchemyError:
+            session.rollback()
+            logger.exception(
+                "Failed to persist failure status for document %s", source_doc.id
+            )
+        raise HTTPException(status_code=500, detail=f"Processing failed: {str(e)}")
+
 
 
 class DocumentOut(BaseModel):

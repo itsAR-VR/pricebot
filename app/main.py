@@ -1,6 +1,7 @@
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
+from fastapi.responses import RedirectResponse
 
 from app.api.routes import documents, health, offers, price_history, products, vendors
 from app.ui import views as operator_views
@@ -26,6 +27,11 @@ app.include_router(operator_views.router)
 app.include_router(operator_views.upload_router)
 
 
-@app.get("/", summary="Service metadata")
-def root() -> dict[str, str]:
+@app.get("/", include_in_schema=False)
+def root() -> RedirectResponse:
+    return RedirectResponse(url="/upload", status_code=307)
+
+
+@app.get("/metadata", summary="Service metadata")
+def service_metadata() -> dict[str, str]:
     return {"service": settings.app_name, "environment": settings.environment}
