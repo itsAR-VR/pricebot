@@ -1,5 +1,6 @@
 from contextlib import asynccontextmanager
 import logging
+import os
 
 from fastapi import FastAPI
 from fastapi.responses import RedirectResponse
@@ -14,10 +15,18 @@ logger = logging.getLogger("pricebot.startup")
 
 @asynccontextmanager
 async def lifespan(_: FastAPI):
+    logger.info("=== Pricebot Startup ===")
+    logger.info("PORT: %s", os.getenv("PORT", "NOT SET"))
+    logger.info("ENVIRONMENT: %s", settings.environment)
+    logger.info("DATABASE_URL: %s", "***" if settings.database_url else "NOT SET")
+    logger.info("INGESTION_STORAGE_DIR: %s", settings.ingestion_storage_dir)
+    logger.info("========================")
+    
     # Avoid crashing the app during startup if the database is unavailable.
     # Healthchecks should succeed even if DB is temporarily down.
     try:
         init_db()
+        logger.info("Database initialization completed successfully")
     except Exception as exc:  # pragma: no cover - defensive startup
         logger.exception("Database initialization skipped due to error: %s", exc)
     yield
