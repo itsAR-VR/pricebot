@@ -8,7 +8,15 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 def _default_database_url() -> str:
     explicit = os.getenv("DATABASE_URL")
     if explicit:
-        return explicit
+        # Normalize common postgres schemes to SQLAlchemy-friendly forms
+        # Accept: postgres://..., postgresql://..., postgresql+psycopg://...
+        url = explicit
+        if url.startswith("postgres://"):
+            # SQLAlchemy recommends postgresql+psycopg for psycopg3
+            url = url.replace("postgres://", "postgresql+psycopg://", 1)
+        elif url.startswith("postgresql://"):
+            url = url.replace("postgresql://", "postgresql+psycopg://", 1)
+        return url
 
     mount_path = os.getenv("RAILWAY_VOLUME_MOUNT_PATH")
     if mount_path:
