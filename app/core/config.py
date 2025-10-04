@@ -16,7 +16,12 @@ class Settings(BaseSettings):
     )
 
     app_name: str = "Pricebot API"
-    environment: str = os.getenv("ENVIRONMENT") or os.getenv("RAILWAY_ENVIRONMENT_NAME") or "local"
+    environment: str = (
+        os.getenv("ENVIRONMENT")
+        or os.getenv("RAILWAY_ENVIRONMENT_NAME")
+        or os.getenv("RAILWAY_ENVIRONMENT")
+        or "local"
+    )
 
     database_url: str = "sqlite:///./pricebot.db"
     alembic_database_url: str | None = None
