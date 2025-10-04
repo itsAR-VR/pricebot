@@ -5,6 +5,18 @@ from pathlib import Path
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
+def _default_database_url() -> str:
+    explicit = os.getenv("DATABASE_URL")
+    if explicit:
+        return explicit
+
+    mount_path = os.getenv("RAILWAY_VOLUME_MOUNT_PATH")
+    if mount_path:
+        return f"sqlite:///{Path(mount_path) / 'pricebot.db'}"
+
+    return "sqlite:///./pricebot.db"
+
+
 class Settings(BaseSettings):
     """Application configuration pulled from environment variables or `.env`."""
 
@@ -23,7 +35,7 @@ class Settings(BaseSettings):
         or "local"
     )
 
-    database_url: str = "sqlite:///./pricebot.db"
+    database_url: str = _default_database_url()
     alembic_database_url: str | None = None
 
     default_currency: str = "USD"
