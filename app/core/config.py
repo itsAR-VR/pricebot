@@ -1,4 +1,5 @@
 from functools import lru_cache
+import os
 from pathlib import Path
 
 from pydantic_settings import BaseSettings, SettingsConfigDict
@@ -15,13 +16,17 @@ class Settings(BaseSettings):
     )
 
     app_name: str = "Pricebot API"
-    environment: str = "local"
+    environment: str = os.getenv("ENVIRONMENT") or os.getenv("RAILWAY_ENVIRONMENT_NAME") or "local"
 
     database_url: str = "sqlite:///./pricebot.db"
     alembic_database_url: str | None = None
 
     default_currency: str = "USD"
-    ingestion_storage_dir: Path = Path("./storage")
+    ingestion_storage_dir: Path = Path(
+        os.getenv("INGESTION_STORAGE_DIR")
+        or os.getenv("RAILWAY_VOLUME_MOUNT_PATH")
+        or "./storage"
+    )
 
     enable_openai: bool = False
     openai_api_key: str | None = None
