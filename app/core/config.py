@@ -3,6 +3,7 @@ import os
 from pathlib import Path
 
 from pydantic_settings import BaseSettings, SettingsConfigDict
+import logging
 
 
 def _default_database_url() -> str:
@@ -64,7 +65,12 @@ def get_settings() -> Settings:
     """Return a cached settings instance."""
 
     settings = Settings()
-    settings.ingestion_storage_dir.mkdir(parents=True, exist_ok=True)
+    try:
+        settings.ingestion_storage_dir.mkdir(parents=True, exist_ok=True)
+    except OSError as exc:  # pragma: no cover - defensive
+        logging.getLogger("pricebot.startup").exception(
+            "Failed to ensure storage dir %s: %s", settings.ingestion_storage_dir, exc
+        )
     return settings
 
 
