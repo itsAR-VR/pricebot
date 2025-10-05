@@ -22,6 +22,13 @@ _SKIP_PREFIXES = (
     "voice call",
     "video call",
     "you joined",
+    "messages and calls are end-to-end encrypted",
+    "this chat is with a business account",
+    "missed voice call",
+    "missed video call",
+    "security code changed",
+    "added you",
+    "media omitted",
 )
 
 _REACTION_PREFIXES = ("you reacted", "tony reacted", "reacted")
@@ -55,7 +62,7 @@ class WhatsAppTextProcessor(BaseIngestionProcessor):
                 continue
             if any(lowered.startswith(prefix) for prefix in _REACTION_PREFIXES):
                 continue
-            if lowered in {"photo", "video", "missed voice call"}:
+            if lowered in {"photo", "video", "missed voice call", "missed video call"}:
                 continue
             if _TIME_PATTERN.match(line):
                 current_speaker = None

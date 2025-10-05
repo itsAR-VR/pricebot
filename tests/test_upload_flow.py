@@ -189,3 +189,73 @@ def test_upload_storage_filenames_unique(monkeypatch, tmp_path, session):
         assert stored_path.parent == tmp_path.resolve()
 
     app.dependency_overrides.pop(get_db, None)
+
+
+def test_upload_multiple_files_single_request(monkeypatch, tmp_path, session):
+    app.dependency_overrides[get_db] = _override_get_db(session)
+    monkeypatch.setattr(settings, "ingestion_storage_dir", tmp_path)
+
+    client = TestClient(app)
+    files_payload = [
+        ("files", ("sample1.csv", "Product,Price\nWidget,9.99\n", "text/csv")),
+        ("files", ("sample2.csv", "Product,Price\nGadget,19.99\n", "text/csv")),
+    ]
+
+    response = client.post(
+        "/documents/upload",
+        files=files_payload,
+        data={"vendor_name": "Multi Vendor"},
+    )
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["status"] == "success"
+    assert payload["processed_count"] == 2
+    assert payload["failed_count"] == 0
+    assert len(payload["processed"]) == 2
+
+    session.expire_all()
+    documents = session.exec(select(models.SourceDocument).order_by(models.SourceDocument.file_name)).all()
+    assert len(documents) == 2
+    assert {doc.file_name for doc in documents} == {"sample1.csv", "sample2.csv"}
+
+    offers = session.exec(select(models.Offer)).all()
+    assert len(offers) == 2
+
+    app.dependency_overrides.pop(get_db, None)
+
+
+def test_upload_multiple_files_partial_failure(monkeypatch, tmp_path, session):
+    app.dependency_overrides[get_db] = _override_get_db(session)
+    monkeypatch.setattr(settings, "ingestion_storage_dir", tmp_path)
+
+    client = TestClient(app)
+    files_payload = [
+        ("files", ("good.csv", "Product,Price\nWidget,9.99\n", "text/csv")),
+        ("files", ("bad.exe", b"binary", "application/octet-stream")),
+    ]
+
+    response = client.post(
+        "/documents/upload",
+        files=files_payload,
+        data={"vendor_name": "Partial Vendor"},
+    )
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["status"] == "partial_success"
+    assert payload["processed_count"] == 1
+    assert payload["failed_count"] == 1
+    assert len(payload["processed"]) == 1
+    assert len(payload["errors"]) == 1
+    assert "Unsupported file type" in payload["errors"][0]["detail"]
+
+    session.expire_all()
+    documents = session.exec(select(models.SourceDocument)).all()
+    assert len(documents) == 1
+    assert documents[0].file_name == "good.csv"
+
+    offers = session.exec(select(models.Offer)).all()
+    assert len(offers) == 1
+
+    app.dependency_overrides.pop(get_db, None)

@@ -455,78 +455,81 @@
 
             const processor = document.getElementById('processor').value;
 
-            // Upload files one by one
             uploadBtn.disabled = true;
             progress.style.display = 'block';
             result.style.display = 'none';
+            progressFill.style.width = '10%';
+            progressText.textContent = `Uploading ${selectedFiles.length} file(s)...`;
 
-            let successCount = 0;
-            let errorCount = 0;
-            const errors = [];
-
-            for (let i = 0; i < selectedFiles.length; i++) {
-                const file = selectedFiles[i];
-                progressText.textContent = `Uploading ${i + 1} of ${selectedFiles.length}: ${file.name}`;
-                progressFill.style.width = ((i / selectedFiles.length) * 100) + '%';
-
-                try {
-                    const formData = new FormData();
-                    formData.append('file', file);
-                    formData.append('vendor_name', vendorName);
-                    if (processor !== 'auto') {
-                        formData.append('processor', processor);
-                    }
-
-                    const response = await fetch('/documents/upload', {
-                        method: 'POST',
-                        body: formData
-                    });
-
-                    if (response.ok) {
-                        successCount++;
-                    } else {
-                        errorCount++;
-                        // Prefer JSON error, gracefully fall back to text
-                        let message = 'Unknown error';
-                        const ct = response.headers.get('content-type') || '';
-                        if (ct.includes('application/json')) {
-                            const data = await response.json().catch(() => null);
-                            message = (data && (data.detail || data.message)) || message;
-                        } else {
-                            const txt = await response.text().catch(() => '');
-                            if (txt) message = txt.substring(0, 400);
-                        }
-                        errors.push(`${file.name}: ${message}`);
-                    }
-                } catch (error) {
-                    errorCount++;
-                    errors.push(`${file.name}: ${error.message}`);
-                }
+            const formData = new FormData();
+            selectedFiles.forEach((file) => formData.append('files', file));
+            formData.append('vendor_name', vendorName);
+            if (processor !== 'auto') {
+                formData.append('processor', processor);
             }
 
-            progressFill.style.width = '100%';
-            progressText.textContent = 'Complete!';
+            try {
+                const response = await fetch('/documents/upload', {
+                    method: 'POST',
+                    body: formData
+                });
 
-            setTimeout(() => {
-                progress.style.display = 'none';
-                uploadBtn.disabled = false;
+                const contentType = response.headers.get('content-type') || '';
+                let data = null;
+                if (contentType.includes('application/json')) {
+                    data = await response.json().catch(() => null);
+                } else {
+                    const text = await response.text().catch(() => '');
+                    throw new Error(text || 'Unexpected response from server');
+                }
 
-                if (errorCount === 0) {
+                progressFill.style.width = '100%';
+                progressText.textContent = 'Processing complete';
+
+                if (!response.ok) {
+                    const message = (data && (data.detail || data.message)) || 'Upload failed';
+                    showResult('error', 'Upload failed', message);
+                    return;
+                }
+
+                const processed = data.processed || [];
+                const processedList = processed
+                    .map((item) => `• ${item.filename} (${item.offers_count} offers)`)
+                    .join('<br>');
+
+                if (data.status === 'success') {
+                    const summary = processedList || 'Files processed successfully.';
                     showResult('success', '✅ Upload Successful!',
-                        `Successfully processed ${successCount} file(s) for vendor "${vendorName}". ` +
+                        `Processed ${data.processed_count} file(s) for vendor "${vendorName}".<br>${summary}<br>` +
                         `<a href="/admin/documents" style="color: inherit; text-decoration: underline;">View documents</a>`);
 
-                    // Reset form
                     selectedFiles = [];
                     fileInput.value = '';
                     fileInfo.style.display = 'none';
                     uploadForm.reset();
-                } else {
+                } else if (data.status === 'partial_success') {
+                    const errorList = (data.errors || [])
+                        .map((err) => `${err.filename}: ${err.detail}`)
+                        .join('<br>');
+
                     showResult('error', '⚠️ Upload completed with errors',
-                        `Success: ${successCount}, Failed: ${errorCount}<br><br>` +
-                        `Errors:<br>${errors.join('<br>')}`);
+                        `Success: ${data.processed_count}, Failed: ${data.failed_count}<br><br>` +
+                        (processedList ? `Processed:<br>${processedList}<br><br>` : '') +
+                        `Errors:<br>${errorList}`);
+                } else {
+                    showResult('error', 'Unknown upload status',
+                        'Unexpected response from the server. Please check the logs.');
                 }
-            }, 500);
+            } catch (error) {
+                progressFill.style.width = '100%';
+                progressText.textContent = 'Upload failed';
+                showResult('error', 'Upload failed', error.message || 'Unexpected error during upload.');
+            } finally {
+                uploadBtn.disabled = false;
+                setTimeout(() => {
+                    progress.style.display = 'none';
+                }, 500);
+            }
         });
 
         function showResult(type, title, message) {

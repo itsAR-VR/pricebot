@@ -72,3 +72,23 @@ def test_operator_document_detail(session):
     assert "MacBook Air" in response.text
 
     app.dependency_overrides.pop(get_db, None)
+
+
+def test_chat_page_links_tool_endpoints():
+    client = TestClient(app)
+    response = client.get("/chat")
+
+    assert response.status_code == 200
+    assert "/chat/tools/products/resolve" in response.text
+    assert "/chat/tools/offers/search-best-price" in response.text
+    assert "/documents/templates/vendor-price" in response.text
+
+
+def test_vendor_template_is_downloadable():
+    client = TestClient(app)
+    response = client.get("/documents/templates/vendor-price")
+
+    assert response.status_code == 200
+    assert response.headers["content-type"].startswith(
+        "application/vnd.openxmlformats-officedocument"
+    )

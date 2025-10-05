@@ -3,7 +3,7 @@
 This guide covers day-to-day ingestion tasks for spreadsheets, WhatsApp transcripts, and OCR-able documents.
 
 ## 1. Preparing Source Files
-- **Spreadsheets**: Save as `.xlsx`, `.xls`, or `.csv`. Ensure price columns include currency tokens or symbols.
+- **Spreadsheets**: Save as `.xlsx`, `.xls`, or `.csv`. Use the standard header set (`MODEL/SKU`, `DESCRIPTION`, `PRICE`, `QTY`, `CONDITION`) with numeric values only for price/quantity (no currency symbols). A ready-to-use workbook ships at `/documents/templates/vendor-price`; see `docs/CHAT_INTERFACE_SPEC.md#spreadsheet-template-guidelines` for details.
 - **WhatsApp transcripts**: Export the chat as text (`.txt`) with media omitted. Place the file inside the storage directory (`storage/` locally or `/data/storage` on Railway).
 - **Images / PDFs**: Supported formats include `.png`, `.jpg`, `.jpeg`, `.webp`, `.tif`, `.tiff`, and `.pdf`. For PDFs the text layer is extracted; for images we use Tesseract OCR (enable extras via `pip install -e .[ocr,pdf]`).
 

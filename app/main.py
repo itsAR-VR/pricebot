@@ -5,7 +5,7 @@ import os
 from fastapi import FastAPI
 from fastapi.responses import RedirectResponse
 
-from app.api.routes import documents, health, offers, price_history, products, vendors
+from app.api.routes import chat_tools, documents, health, offers, price_history, products, vendors
 from app.ui import views as operator_views
 from app.core.config import settings
 from app.db.session import init_db
@@ -40,8 +40,10 @@ app.include_router(products.router)
 app.include_router(vendors.router)
 app.include_router(price_history.router)
 app.include_router(documents.router)
+app.include_router(chat_tools.router)
 app.include_router(operator_views.router)
 app.include_router(operator_views.upload_router)
+app.include_router(operator_views.chat_router)
 
 
 @app.get("/", include_in_schema=False)

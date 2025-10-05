@@ -34,3 +34,17 @@ def test_parse_offer_line_requires_product():
     )
     assert offer is None
     assert error is not None
+
+
+def test_parse_offer_line_ignores_leading_identifier_as_quantity():
+    offer, error = parse_offer_line(
+        "840023255922 Motorola G5 164 USD",
+        vendor_name="Vendor",
+        default_currency="USD",
+    )
+
+    assert error is None
+    assert offer is not None
+    assert offer.quantity is None
+    assert offer.product_name == "Motorola G5"
+    assert offer.raw_payload["identifiers"] == ["840023255922"]

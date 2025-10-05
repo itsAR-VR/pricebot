@@ -1,0 +1,1357 @@
+{% extends "base.html" %}
+{% block content %}
+<div id="chat-root" class="chat-root" aria-live="polite"></div>
+
+<style>
+  :root {
+    color-scheme: dark;
+  }
+
+  .chat-root {
+    display: flex;
+    flex-direction: column;
+    height: calc(100vh - 140px);
+    max-height: 820px;
+    gap: 16px;
+  }
+
+  .chat-shell {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    border-radius: 16px;
+    background: rgba(10, 22, 39, 0.65);
+    border: 1px solid rgba(77, 96, 130, 0.35);
+    box-shadow: 0 18px 38px rgba(12, 35, 56, 0.35);
+    overflow: hidden;
+  }
+
+  .chat-header {
+    padding: 18px 22px 14px 22px;
+    border-bottom: 1px solid rgba(77, 96, 130, 0.25);
+    display: flex;
+    flex-direction: column;
+    gap: 14px;
+    background: rgba(13, 29, 52, 0.88);
+  }
+
+  .chat-header h1 {
+    margin: 0;
+    font-size: 20px;
+    font-weight: 600;
+  }
+
+  .chat-header p {
+    margin: 0;
+    color: rgba(226, 232, 240, 0.75);
+    font-size: 14px;
+  }
+
+  .status-pill {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    border-radius: 999px;
+    padding: 4px 10px;
+    font-size: 12px;
+    background: rgba(56, 189, 248, 0.12);
+    color: #38bdf8;
+  }
+
+  .chat-actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 10px;
+  }
+
+  .chat-action-btn {
+    border-radius: 12px;
+    border: 1px solid rgba(148, 163, 184, 0.2);
+    background: rgba(30, 41, 59, 0.6);
+    color: rgba(226, 232, 240, 0.86);
+    font-size: 13px;
+    padding: 10px 14px;
+    cursor: pointer;
+    transition: border-color 0.2s ease, transform 0.2s ease;
+  }
+
+  .chat-action-btn:hover {
+    border-color: rgba(148, 163, 184, 0.5);
+    transform: translateY(-1px);
+  }
+
+  .transcript {
+    flex: 1;
+    overflow-y: auto;
+    padding: 22px 26px;
+    display: flex;
+    flex-direction: column;
+    gap: 18px;
+    background: linear-gradient(180deg, rgba(15, 23, 42, 0.62) 0%, rgba(8, 15, 30, 0.82) 100%);
+  }
+
+  .composer {
+    padding: 18px 22px;
+    border-top: 1px solid rgba(77, 96, 130, 0.25);
+    background: rgba(13, 29, 52, 0.92);
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+  }
+
+  .composer textarea {
+    resize: none;
+    min-height: 72px;
+    border-radius: 14px;
+    border: 1px solid rgba(148, 163, 184, 0.25);
+    background: rgba(15, 23, 42, 0.78);
+    color: rgba(226, 232, 240, 0.95);
+    padding: 14px 16px;
+    font-size: 15px;
+    line-height: 1.4;
+  }
+
+  .composer textarea:focus {
+    outline: none;
+    border-color: rgba(56, 189, 248, 0.55);
+    box-shadow: 0 0 0 1px rgba(56, 189, 248, 0.35);
+  }
+
+  .composer-controls {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+  }
+
+  .composer-controls button {
+    border-radius: 12px;
+    border: none;
+    background: linear-gradient(135deg, rgba(56, 189, 248, 1) 0%, rgba(14, 165, 233, 1) 100%);
+    color: #0b1120;
+    font-weight: 600;
+    font-size: 15px;
+    padding: 12px 20px;
+    cursor: pointer;
+    box-shadow: 0 10px 24px rgba(56, 189, 248, 0.35);
+  }
+
+  .composer-controls button:disabled {
+    opacity: 0.55;
+    cursor: not-allowed;
+    box-shadow: none;
+  }
+
+  .control-ghost {
+    border-radius: 12px;
+    border: 1px dashed rgba(148, 163, 184, 0.4);
+    background: rgba(15, 23, 42, 0.5);
+    color: rgba(226, 232, 240, 0.8);
+    font-size: 13px;
+    padding: 10px 12px;
+    cursor: pointer;
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+  }
+
+  .control-ghost:hover {
+    border-color: rgba(148, 163, 184, 0.65);
+  }
+
+  .attachment-tray {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 12px;
+    padding: 10px 4px 0 4px;
+  }
+
+  .attachment-pill {
+    position: relative;
+    border-radius: 12px;
+    border: 1px solid rgba(148, 163, 184, 0.35);
+    background: rgba(30, 41, 59, 0.75);
+    color: rgba(226, 232, 240, 0.95);
+    padding: 10px 12px 10px 42px;
+    min-width: 180px;
+  }
+
+  .attachment-pill img {
+    position: absolute;
+    top: 8px;
+    left: 8px;
+    width: 26px;
+    height: 26px;
+    border-radius: 6px;
+    object-fit: cover;
+    border: 1px solid rgba(148, 163, 184, 0.4);
+  }
+
+  .attachment-pill .remove {
+    position: absolute;
+    top: 6px;
+    right: 6px;
+    background: rgba(15, 23, 42, 0.85);
+    border: 1px solid rgba(100, 116, 139, 0.6);
+    border-radius: 50%;
+    width: 20px;
+    height: 20px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: rgba(248, 250, 252, 0.85);
+    cursor: pointer;
+    font-size: 12px;
+  }
+
+  .message-bubble {
+    max-width: 640px;
+    border-radius: 20px;
+    padding: 16px 20px;
+    font-size: 15px;
+    line-height: 1.5;
+    background: rgba(22, 33, 52, 0.9);
+    border: 1px solid rgba(148, 163, 184, 0.16);
+    box-shadow: 0 16px 36px rgba(8, 24, 48, 0.4);
+    position: relative;
+  }
+
+  .message-user {
+    align-self: flex-end;
+    background: linear-gradient(135deg, rgba(56, 189, 248, 0.2) 0%, rgba(125, 211, 252, 0.15) 100%);
+    border-color: rgba(125, 211, 252, 0.45);
+  }
+
+  .message-metadata {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 12px;
+    color: rgba(148, 163, 184, 0.78);
+    margin-bottom: 10px;
+  }
+
+  .message-attachments {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    margin-top: 12px;
+  }
+
+  .message-attachments span {
+    font-size: 13px;
+    color: rgba(226, 232, 240, 0.75);
+  }
+
+  .offer-card {
+    display: grid;
+    gap: 14px;
+    border-radius: 16px;
+    border: 1px solid rgba(148, 163, 184, 0.18);
+    background: rgba(13, 24, 45, 0.85);
+    padding: 18px;
+  }
+
+  .offer-header {
+    display: flex;
+    gap: 18px;
+  }
+
+  .offer-header img {
+    width: 126px;
+    height: 126px;
+    border-radius: 12px;
+    object-fit: cover;
+    border: 1px solid rgba(148, 163, 184, 0.25);
+    background: rgba(15, 23, 42, 0.6);
+  }
+
+  .offer-title {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+  }
+
+  .offer-title h3 {
+    margin: 0;
+    font-size: 18px;
+  }
+
+  .offer-title ul {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    font-size: 13px;
+    color: rgba(148, 163, 184, 0.86);
+  }
+
+  .best-offer {
+    display: grid;
+    gap: 10px;
+    border-radius: 14px;
+    padding: 14px;
+    background: rgba(22, 163, 74, 0.12);
+    border: 1px solid rgba(74, 222, 128, 0.25);
+  }
+
+  .offer-row {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    font-size: 14px;
+  }
+
+  .alternate-list {
+    display: grid;
+    gap: 10px;
+  }
+
+  .alternate-item {
+    display: grid;
+    gap: 4px;
+    padding: 12px 14px;
+    border-radius: 12px;
+    border: 1px solid rgba(148, 163, 184, 0.25);
+    background: rgba(15, 23, 42, 0.6);
+  }
+
+  .vendor-row {
+    display: flex;
+    justify-content: space-between;
+    font-size: 13px;
+    color: rgba(226, 232, 240, 0.85);
+  }
+
+  .stepper {
+    display: grid;
+    gap: 10px;
+    margin-top: 8px;
+  }
+
+  .step {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    font-size: 14px;
+    color: rgba(226, 232, 240, 0.78);
+  }
+
+  .step::before {
+    content: '';
+    width: 10px;
+    height: 10px;
+    border-radius: 50%;
+    background: rgba(148, 163, 184, 0.45);
+    flex-shrink: 0;
+  }
+
+  .step[data-status="active"]::before {
+    background: #38bdf8;
+    box-shadow: 0 0 0 4px rgba(56, 189, 248, 0.2);
+  }
+
+  .step[data-status="done"]::before {
+    background: #22c55e;
+  }
+
+  .step[data-status="error"]::before {
+    background: #f87171;
+  }
+
+  .error-banner {
+    border-radius: 12px;
+    border: 1px solid rgba(248, 113, 113, 0.45);
+    background: rgba(220, 38, 38, 0.12);
+    color: rgba(252, 231, 243, 0.95);
+    padding: 12px 16px;
+    font-size: 14px;
+  }
+
+  .vendor-input {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    padding: 12px 14px;
+    border-radius: 12px;
+    border: 1px dashed rgba(148, 163, 184, 0.35);
+    background: rgba(15, 23, 42, 0.55);
+  }
+
+  .vendor-input input {
+    border-radius: 10px;
+    border: 1px solid rgba(148, 163, 184, 0.3);
+    background: rgba(15, 23, 42, 0.65);
+    color: rgba(226, 232, 240, 0.92);
+    padding: 10px 12px;
+    font-size: 14px;
+  }
+
+  .vendor-input input:focus {
+    outline: none;
+    border-color: rgba(56, 189, 248, 0.5);
+  }
+
+  .inline-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    border-radius: 999px;
+    padding: 4px 10px;
+    font-size: 12px;
+    background: rgba(56, 189, 248, 0.14);
+    color: rgba(125, 211, 252, 0.95);
+  }
+
+  .doc-chip {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    border-radius: 999px;
+    padding: 6px 10px;
+    font-size: 12px;
+    background: rgba(148, 163, 184, 0.16);
+    color: rgba(226, 232, 240, 0.9);
+  }
+
+  .bundle-footer {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 10px;
+    align-items: center;
+    font-size: 12px;
+    color: rgba(148, 163, 184, 0.75);
+  }
+
+  .empty-state {
+    align-self: center;
+    text-align: center;
+    padding: 60px 40px;
+    max-width: 380px;
+    color: rgba(148, 163, 184, 0.8);
+  }
+
+  .drop-target {
+    border: 2px dashed rgba(56, 189, 248, 0.55);
+    background: rgba(14, 165, 233, 0.12);
+  }
+
+  @media (max-width: 900px) {
+    .chat-shell {
+      height: calc(100vh - 160px);
+    }
+    .chat-root {
+      height: auto;
+      max-height: none;
+    }
+  }
+</style>
+
+<script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+<script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+<script>
+  (function () {
+    const config = {{ api_config | tojson }};
+    const { useEffect, useMemo, useRef, useState } = React;
+
+    function uid(prefix = "id") {
+      return `${prefix}-${Math.random().toString(36).slice(2)}-${Date.now().toString(36)}`;
+    }
+
+    function formatCurrency(amount, currency) {
+      try {
+        return new Intl.NumberFormat("en-US", {
+          style: "currency",
+          currency: currency || "USD",
+          maximumFractionDigits: 2,
+        }).format(amount);
+      } catch (_err) {
+        return `${currency || "USD"} ${amount.toFixed(2)}`;
+      }
+    }
+
+    function formatDate(isoString) {
+      if (!isoString) return "";
+      const date = new Date(isoString);
+      if (Number.isNaN(date.getTime())) {
+        return isoString;
+      }
+      return date.toLocaleString();
+    }
+
+    function relativeTime(isoString) {
+      if (!isoString) return "";
+      const date = new Date(isoString);
+      if (Number.isNaN(date.getTime())) return "";
+      const diffMs = Date.now() - date.getTime();
+      const diffMinutes = Math.round(diffMs / 60000);
+      if (diffMinutes < 1) return "just now";
+      if (diffMinutes < 60) return `${diffMinutes} min ago`;
+      const diffHours = Math.round(diffMinutes / 60);
+      if (diffHours < 24) return `${diffHours} hr${diffHours === 1 ? "" : "s"} ago`;
+      const diffDays = Math.round(diffHours / 24);
+      return `${diffDays} day${diffDays === 1 ? "" : "s"} ago`;
+    }
+
+    function AttachmentPill({ attachment, onRemove }) {
+      return React.createElement(
+        "div",
+        { className: "attachment-pill" },
+        attachment.preview &&
+          React.createElement("img", {
+            src: attachment.preview,
+            alt: attachment.file.name,
+          }),
+        React.createElement(
+          "div",
+          null,
+          React.createElement(
+            "strong",
+            { style: { display: "block", fontSize: "13px" } },
+            attachment.file.name
+          ),
+          React.createElement(
+            "span",
+            { style: { fontSize: "12px", color: "rgba(148,163,184,0.75)" } },
+            `${(attachment.file.size / 1024).toFixed(1)} KB`
+          )
+        ),
+        React.createElement(
+          "button",
+          {
+            type: "button",
+            className: "remove",
+            onClick: () => onRemove(attachment.id),
+            title: "Remove attachment",
+          },
+          "×"
+        )
+      );
+    }
+
+    function ProgressMessage({ message }) {
+      return React.createElement(
+        "div",
+        { className: "message-bubble" },
+        React.createElement(
+          "div",
+          { className: "message-metadata" },
+          React.createElement(
+            "span",
+            { className: "inline-badge" },
+            "Running tools"
+          ),
+          React.createElement("span", null, formatDate(message.timestamp))
+        ),
+        React.createElement("div", null, message.text || "Working…"),
+        React.createElement(
+          "div",
+          { className: "stepper" },
+          message.steps.map((step) =>
+            React.createElement(
+              "div",
+              { key: step.id, className: "step", "data-status": step.status },
+              step.label
+            )
+          )
+        ),
+        message.documents && message.documents.length
+          ? React.createElement(
+              "div",
+              { className: "bundle-footer", style: { marginTop: "12px" } },
+              message.documents.map((doc) =>
+                React.createElement(
+                  "span",
+                  { key: doc.id, className: "doc-chip" },
+                  doc.file_name,
+                  " • ",
+                  doc.status
+                )
+              )
+            )
+          : null
+      );
+    }
+
+    function OfferBundle({ bundle }) {
+      const specList = [];
+      if (bundle.product.model_number) {
+        specList.push(`Model ${bundle.product.model_number}`);
+      }
+      if (bundle.product.upc) {
+        specList.push(`UPC ${bundle.product.upc}`);
+      }
+      if (bundle.product.match_source) {
+        specList.push(`Matched via ${bundle.product.match_source}`);
+      }
+
+      return React.createElement(
+        "div",
+        { className: "offer-card" },
+        React.createElement(
+          "div",
+          { className: "offer-header" },
+          bundle.product.image_url
+            ? React.createElement("img", {
+                src: bundle.product.image_url,
+                alt: bundle.product.canonical_name,
+              })
+            : React.createElement("div", {
+                style: {
+                  width: "126px",
+                  height: "126px",
+                  borderRadius: "12px",
+                  background: "rgba(15,23,42,0.75)",
+                  border: "1px solid rgba(148,163,184,0.25)",
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "center",
+                  fontSize: "12px",
+                  color: "rgba(148,163,184,0.68)",
+                  textTransform: "uppercase",
+                  letterSpacing: "0.08em",
+                },
+                children: "No Photo",
+              }),
+          React.createElement(
+            "div",
+            { className: "offer-title" },
+            React.createElement("h3", null, bundle.product.canonical_name),
+            specList.length
+              ? React.createElement(
+                  "ul",
+                  null,
+                  specList.map((item, idx) => React.createElement("li", { key: idx }, item))
+                )
+              : null
+          )
+        ),
+        bundle.best_offer
+          ? React.createElement(
+              "div",
+              { className: "best-offer" },
+              React.createElement(
+                "div",
+                { className: "offer-row" },
+                React.createElement(
+                  "span",
+                  { style: { fontSize: "15px", fontWeight: 600 } },
+                  formatCurrency(bundle.best_offer.price, bundle.best_offer.currency)
+                ),
+                React.createElement(
+                  "span",
+                  null,
+                  bundle.best_offer.condition || ""
+                )
+              ),
+              React.createElement(
+                "div",
+                { className: "offer-row" },
+                React.createElement(
+                  "span",
+                  null,
+                  `${bundle.best_offer.vendor.name} • ${formatDate(bundle.best_offer.captured_at)}`
+                ),
+                React.createElement(
+                  "span",
+                  null,
+                  bundle.best_offer.location ? `Location: ${bundle.best_offer.location}` : ""
+                )
+              )
+            )
+          : React.createElement(
+              "div",
+              { className: "best-offer" },
+              React.createElement(
+                "span",
+                null,
+                "No active offers — try uploading a fresh sheet."
+              )
+            ),
+        React.createElement(
+          "div",
+          { className: "alternate-list" },
+          bundle.alternate_offers && bundle.alternate_offers.length
+            ? bundle.alternate_offers.map((offer) =>
+                React.createElement(
+                  "div",
+                  { key: offer.id, className: "alternate-item" },
+                  React.createElement(
+                    "div",
+                    { className: "vendor-row" },
+                    React.createElement("span", null, formatCurrency(offer.price, offer.currency)),
+                    React.createElement("span", null, offer.vendor.name)
+                  ),
+                  React.createElement(
+                    "div",
+                    { className: "vendor-row" },
+                    React.createElement("span", null, offer.condition || ""),
+                    React.createElement("span", null, offer.location || "")
+                  ),
+                  React.createElement(
+                    "div",
+                    { className: "vendor-row" },
+                    React.createElement("span", null, `Captured ${relativeTime(offer.captured_at)}`),
+                    offer.quantity != null
+                      ? React.createElement("span", null, `Qty ${offer.quantity}`)
+                      : null
+                  )
+                )
+              )
+            : React.createElement(
+                "div",
+                { className: "alternate-item" },
+                "No alternate offers within your filters."
+              )
+        ),
+        React.createElement(
+          "div",
+          { className: "bundle-footer" },
+          React.createElement(
+            "span",
+            { className: "inline-badge" },
+            "Source offers:",
+            " ",
+            bundle.best_offer && bundle.best_offer.source_document ? bundle.best_offer.source_document.file_name : "N/A"
+          ),
+          bundle.best_offer && bundle.best_offer.source_document
+            ? React.createElement(
+                "span",
+                null,
+                `Processed ${relativeTime(bundle.best_offer.source_document.ingest_completed_at)}`
+              )
+            : null
+        )
+      );
+    }
+
+    function AnswerMessage({ message }) {
+      return React.createElement(
+        "div",
+        { className: "message-bubble" },
+        React.createElement(
+          "div",
+          { className: "message-metadata" },
+          React.createElement("span", { className: "inline-badge" }, "Pricebot"),
+          React.createElement("span", null, formatDate(message.timestamp))
+        ),
+        React.createElement(
+          "div",
+          { style: { display: "grid", gap: "16px" } },
+          message.summary
+            ? React.createElement("p", null, message.summary)
+            : null,
+          message.bundles.map((bundle) =>
+            React.createElement(OfferBundle, { key: bundle.product.id, bundle })
+          ),
+          message.documents && message.documents.length
+            ? React.createElement(
+                "div",
+                { className: "bundle-footer" },
+                message.documents.map((doc) =>
+                  React.createElement(
+                    "span",
+                    { key: doc.id, className: "doc-chip" },
+                    `${doc.file_name} • ${doc.status}`
+                  )
+                )
+              )
+            : null,
+          message.filters
+            ? React.createElement(
+                "div",
+                { className: "bundle-footer" },
+                Object.entries(message.filters)
+                  .filter(([, value]) => value)
+                  .map(([key, value]) =>
+                    React.createElement(
+                      "span",
+                      { key: key, className: "inline-badge" },
+                      `${key}: ${value}`
+                    )
+                  )
+              )
+            : null
+        )
+      );
+    }
+
+    function TextMessage({ message }) {
+      return React.createElement(
+        "div",
+        { className: `message-bubble ${message.role === "user" ? "message-user" : ""}` },
+        React.createElement(
+          "div",
+          { className: "message-metadata" },
+          React.createElement(
+            "span",
+            { className: "inline-badge" },
+            message.role === "user" ? "You" : "Pricebot"
+          ),
+          React.createElement("span", null, formatDate(message.timestamp))
+        ),
+        React.createElement("p", { style: { margin: 0 } }, message.content),
+        message.attachments && message.attachments.length
+          ? React.createElement(
+              "div",
+              { className: "message-attachments" },
+              message.attachments.map((file) =>
+                React.createElement(
+                  "span",
+                  { key: file.name },
+                  `${file.name} • ${(file.size / 1024).toFixed(1)} KB`
+                )
+              )
+            )
+          : null
+      );
+    }
+
+    function EmptyState({ onAction }) {
+      return React.createElement(
+        "div",
+        { className: "empty-state" },
+        React.createElement("h2", null, "Welcome to Pricebot"),
+        React.createElement(
+          "p",
+          null,
+          "Upload a price sheet or ask for the best offer on any product. Attach a file, tag a vendor with @VendorName, and I will take it from there."
+        ),
+        React.createElement(
+          "button",
+          {
+            className: "chat-action-btn",
+            style: { marginTop: "16px" },
+            type: "button",
+            onClick: () => onAction("Show best price for iPhone 15 Pro in Miami"),
+          },
+          "Try a sample question"
+        )
+      );
+    }
+
+    function ChatApp({ config }) {
+      const [messages, setMessages] = useState(() => [
+        {
+          id: uid("intro"),
+          role: "assistant",
+          variant: "text",
+          content: "Hi! I’m wired into the latest vendor uploads. Drag in spreadsheets, tag a vendor with @name, or just ask for a product – I’ll resolve the catalog and stream back the best offers.",
+          timestamp: new Date().toISOString(),
+        },
+      ]);
+      const [composer, setComposer] = useState("");
+      const [attachments, setAttachments] = useState([]);
+      const [uploadVendor, setUploadVendor] = useState("");
+      const [isSending, setIsSending] = useState(false);
+      const [errorBanner, setErrorBanner] = useState(null);
+      const dropRef = useRef(null);
+      const transcriptRef = useRef(null);
+
+      useEffect(() => {
+        if (!transcriptRef.current) return;
+        transcriptRef.current.scrollTop = transcriptRef.current.scrollHeight;
+      }, [messages]);
+
+      useEffect(() => () => {
+        attachments.forEach((att) => {
+          if (att.preview) URL.revokeObjectURL(att.preview);
+        });
+      }, [attachments]);
+
+      function updateProgress(messageId, stepId, status, text) {
+        setMessages((prev) =>
+          prev.map((msg) => {
+            if (msg.id !== messageId) return msg;
+            const nextSteps = msg.steps.map((step) =>
+              step.id === stepId ? { ...step, status } : step
+            );
+            return { ...msg, steps: nextSteps, text: text || msg.text };
+          })
+        );
+      }
+
+      function setProgressDocuments(messageId, documents) {
+        setMessages((prev) =>
+          prev.map((msg) =>
+            msg.id === messageId ? { ...msg, documents } : msg
+          )
+        );
+      }
+
+      async function resolveVendorId(name) {
+        const trimmed = name.trim();
+        if (!trimmed) return null;
+        const response = await fetch(`${config.vendors}?q=${encodeURIComponent(trimmed)}&limit=5`);
+        if (!response.ok) {
+          throw new Error("Failed to search vendors");
+        }
+        const data = await response.json();
+        if (!Array.isArray(data) || !data.length) {
+          throw new Error(`Vendor “${trimmed}” not found`);
+        }
+        const match = data.find((vendor) => vendor.name.toLowerCase() === trimmed.toLowerCase());
+        return (match || data[0]).id;
+      }
+
+      async function uploadFiles(files, vendorName, progressId) {
+        if (!files.length) return [];
+        updateProgress(progressId, "upload", "active", "Uploading documents…");
+        const form = new FormData();
+        files.forEach((item) => {
+          form.append("files", item.file, item.file.name);
+        });
+        form.append("vendor_name", vendorName);
+        const response = await fetch(config.upload, { method: "POST", body: form });
+        if (!response.ok) {
+          throw new Error(`Upload failed: ${response.status}`);
+        }
+        const payload = await response.json();
+        const documentIds = [];
+        const summaries = [];
+        if (payload.document_id) {
+          documentIds.push(payload.document_id);
+          summaries.push({
+            id: payload.document_id,
+            file_name: payload.filename,
+            status: "processing",
+          });
+        }
+        if (Array.isArray(payload.processed)) {
+          payload.processed.forEach((doc) => {
+            if (doc.document_id) {
+              documentIds.push(doc.document_id);
+              summaries.push({
+                id: doc.document_id,
+                file_name: doc.filename || doc.original_name || "uploaded.xlsx",
+                status: "processing",
+              });
+            }
+          });
+        }
+        updateProgress(progressId, "upload", "done", "Documents uploaded – waiting for ingestion…");
+        setProgressDocuments(progressId, summaries);
+        return documentIds;
+      }
+
+      async function pollDocuments(documentIds, progressId) {
+        if (!documentIds.length) return [];
+        const resolved = [];
+        for (const docId of documentIds) {
+          let statusPayload = null;
+          for (let attempt = 0; attempt < 15; attempt += 1) {
+            const response = await fetch(`${config.document}/${docId}`);
+            if (!response.ok) break;
+            statusPayload = await response.json();
+            if (!statusPayload || !statusPayload.status) break;
+            if (["processed", "processed_with_warnings", "failed"].includes(statusPayload.status)) {
+              break;
+            }
+            await new Promise((resolve) => setTimeout(resolve, 1500));
+          }
+          if (statusPayload) {
+            resolved.push(statusPayload);
+          }
+        }
+        setProgressDocuments(
+          progressId,
+          resolved.map((doc) => ({
+            id: doc.id,
+            file_name: doc.file_name,
+            status: doc.status,
+          }))
+        );
+        return resolved;
+      }
+
+      function extractVendorHandle(text) {
+        if (!text) return null;
+        const match = text.match(/@([A-Za-z0-9_\-]+)/);
+        if (!match) return null;
+        return match[1].replaceAll("_", " ");
+      }
+
+      function handleFiles(selectedFiles) {
+        const additions = Array.from(selectedFiles).map((file) => {
+          const isImage = file.type.startsWith("image/");
+          return {
+            id: uid("file"),
+            file,
+            preview: isImage ? URL.createObjectURL(file) : null,
+          };
+        });
+        setAttachments((prev) => [...prev, ...additions]);
+        const handleVendor = extractVendorHandle(composer);
+        if (handleVendor && !uploadVendor) {
+          setUploadVendor(handleVendor);
+        }
+      }
+
+      async function handleSend() {
+        const trimmed = composer.trim();
+        if (!trimmed && !attachments.length) {
+          return;
+        }
+        const requiresVendor = attachments.length > 0;
+        if (requiresVendor && !uploadVendor.trim()) {
+          setErrorBanner("Provide a vendor name for the uploads (see attachment tray).");
+          return;
+        }
+        setErrorBanner(null);
+        setIsSending(true);
+
+        const userMessage = {
+          id: uid("msg"),
+          role: "user",
+          variant: "text",
+          content: trimmed,
+          attachments: attachments.map((item) => ({
+            name: item.file.name,
+            size: item.file.size,
+          })),
+          timestamp: new Date().toISOString(),
+        };
+        setMessages((prev) => [...prev, userMessage]);
+
+        const progressId = uid("progress");
+        let resolvedDocuments = [];
+        let succeeded = false;
+        const progressMessage = {
+          id: progressId,
+          role: "assistant",
+          variant: "progress",
+          text: "Preparing tools…",
+          steps: [
+            { id: "upload", label: "Upload attachments", status: attachments.length ? "pending" : "done" },
+            { id: "resolve", label: "Resolve products", status: "pending" },
+            { id: "best_price", label: "Fetch best offers", status: "pending" },
+            { id: "format", label: "Compose answer", status: "pending" },
+          ],
+          documents: [],
+          timestamp: new Date().toISOString(),
+        };
+        setMessages((prev) => [...prev, progressMessage]);
+
+        let vendorId = null;
+        let vendorName = null;
+
+        try {
+          if (attachments.length) {
+            const docIds = await uploadFiles(attachments, uploadVendor.trim(), progressId);
+            resolvedDocuments = await pollDocuments(docIds, progressId);
+          }
+
+          updateProgress(progressId, "resolve", "active", "Resolving product matches…");
+          const resolveResponse = await fetch(config.resolve, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              query: trimmed || "best price",
+              limit: 5,
+              offset: 0,
+            }),
+          });
+          if (!resolveResponse.ok) {
+            throw new Error("Product resolver failed");
+          }
+          const resolvePayload = await resolveResponse.json();
+          updateProgress(progressId, "resolve", "done", "Products resolved.");
+
+          const handleVendor = extractVendorHandle(trimmed);
+          if (handleVendor) {
+            vendorName = handleVendor;
+            vendorId = await resolveVendorId(handleVendor);
+          } else if (uploadVendor.trim()) {
+            vendorName = uploadVendor.trim();
+            vendorId = await resolveVendorId(uploadVendor.trim());
+          }
+
+          updateProgress(progressId, "best_price", "active", "Fetching best offers…");
+          const filters = {
+            vendor_id: vendorId,
+            condition: null,
+            location: null,
+          };
+          const bestPriceResponse = await fetch(config.best_price, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              query: trimmed || "best price",
+              limit: 5,
+              offset: 0,
+              filters,
+            }),
+          });
+          if (!bestPriceResponse.ok) {
+            throw new Error(`Best price search failed (${bestPriceResponse.status})`);
+          }
+          const bestPayload = await bestPriceResponse.json();
+          updateProgress(progressId, "best_price", "done", "Offers retrieved.");
+          updateProgress(progressId, "format", "active", "Formatting answer…");
+
+          const displayFilters = {};
+          if (vendorName) {
+            displayFilters.vendor = vendorName;
+          }
+          if (bestPayload.applied_filters) {
+            const { condition, location, min_price, max_price, captured_since } = bestPayload.applied_filters;
+            if (condition) displayFilters.condition = condition;
+            if (location) displayFilters.location = location;
+            if (min_price != null) displayFilters.min_price = min_price;
+            if (max_price != null) displayFilters.max_price = max_price;
+            if (captured_since) displayFilters.captured_since = captured_since;
+          }
+
+          const answerMessage = {
+            id: uid("answer"),
+            role: "assistant",
+            variant: "answer",
+            bundles: bestPayload.results || [],
+            filters: displayFilters,
+            documents: resolvedDocuments.map((doc) => ({
+              id: doc.id,
+              file_name: doc.file_name,
+              status: doc.status,
+            })),
+            timestamp: new Date().toISOString(),
+            summary: bestPayload.results && bestPayload.results.length
+              ? `Found ${bestPayload.results.length} product match${bestPayload.results.length === 1 ? "" : "es"}.`
+              : "No active offers matched. Upload a fresh sheet or adjust filters.",
+          };
+          updateProgress(progressId, "format", "done", "Answer ready.");
+          setMessages((prev) => [...prev, answerMessage]);
+          succeeded = true;
+        } catch (error) {
+          console.error(error);
+          setMessages((prev) =>
+            prev.map((msg) =>
+              msg.id === progressId
+                ? {
+                    ...msg,
+                    text: error.message || "Something went wrong",
+                    steps: msg.steps.map((step) =>
+                      step.status === "done" ? step : { ...step, status: "error" }
+                    ),
+                  }
+                : msg
+            )
+          );
+        } finally {
+          setIsSending(false);
+          if (succeeded) {
+            setAttachments((prev) => {
+              prev.forEach((att) => att.preview && URL.revokeObjectURL(att.preview));
+              return [];
+            });
+            setUploadVendor("");
+          }
+          setComposer("");
+        }
+      }
+
+      function handleKeyDown(event) {
+        if (event.key === "Enter" && (event.metaKey || event.ctrlKey)) {
+          handleSend();
+        }
+      }
+
+      function onDrop(event) {
+        event.preventDefault();
+        event.stopPropagation();
+        dropRef.current && dropRef.current.classList.remove("drop-target");
+        if (event.dataTransfer.files && event.dataTransfer.files.length) {
+          handleFiles(event.dataTransfer.files);
+        }
+      }
+
+      function onDragOver(event) {
+        event.preventDefault();
+        dropRef.current && dropRef.current.classList.add("drop-target");
+      }
+
+      function onDragLeave(event) {
+        event.preventDefault();
+        dropRef.current && dropRef.current.classList.remove("drop-target");
+      }
+
+    const quickActions = useMemo(
+      () => [
+        { label: "Find best price", type: "prompt", text: "Find best price for iPhone 15 Pro in Miami" },
+        { label: "Upload price sheet", type: "prompt", text: "@TechSupplier Uploading SB Technology Pricelist Oct" },
+        { label: "Check Samsung foldables", type: "prompt", text: "Show Samsung Galaxy Z Fold 6 offers" },
+        { label: "Download template", type: "link", href: config.template_download },
+      ],
+      [config.template_download]
+    );
+
+      return React.createElement(
+        "div",
+        { className: "chat-shell" },
+        React.createElement(
+          "section",
+          { className: "chat-header" },
+          React.createElement("div", null,
+            React.createElement("h1", null, "Price Intelligence Workspace"),
+            React.createElement(
+              "p",
+              null,
+              "Attach vendor artefacts, ask natural questions, and track tool calls live."
+            )
+          ),
+          React.createElement(
+            "div",
+            { className: "chat-actions" },
+            quickActions.map((action) => {
+              const handleClick = () => {
+                if (action.type === "link" && action.href) {
+                  window.open(action.href, "_blank", "noopener");
+                  return;
+                }
+                if (action.type === "prompt" && action.text) {
+                  setComposer(action.text);
+                }
+              };
+              return React.createElement(
+                "button",
+                {
+                  key: action.label,
+                  type: "button",
+                  className: "chat-action-btn",
+                  onClick: handleClick,
+                  disabled: isSending,
+                },
+                action.label
+              );
+            }),
+            React.createElement(
+              "span",
+              { className: "status-pill" },
+              "Live data"
+            )
+          )
+        ),
+        React.createElement(
+          "section",
+          {
+            ref: (node) => {
+              transcriptRef.current = node;
+              dropRef.current = node;
+            },
+            className: "transcript",
+            onDrop,
+            onDragOver,
+            onDragLeave,
+          },
+          messages.length <= 1
+            ? React.createElement(EmptyState, { onAction: setComposer })
+            : null,
+          messages.map((message) => {
+            if (message.variant === "progress") {
+              return React.createElement(ProgressMessage, { key: message.id, message });
+            }
+            if (message.variant === "answer") {
+              return React.createElement(AnswerMessage, { key: message.id, message });
+            }
+            return React.createElement(TextMessage, { key: message.id, message });
+          })
+        ),
+        React.createElement(
+          "section",
+          { className: "composer" },
+          errorBanner
+            ? React.createElement("div", { className: "error-banner" }, errorBanner)
+            : null,
+          attachments.length
+            ? React.createElement(
+                "div",
+                { className: "attachment-tray" },
+                attachments.map((att) =>
+                  React.createElement(AttachmentPill, {
+                    key: att.id,
+                    attachment: att,
+                    onRemove: (id) =>
+                      setAttachments((prev) => {
+                        const next = prev.filter((item) => item.id !== id);
+                        const removed = prev.find((item) => item.id === id);
+                        if (removed && removed.preview) {
+                          URL.revokeObjectURL(removed.preview);
+                        }
+                        return next;
+                      }),
+                  })
+                )
+              )
+            : null,
+          attachments.length
+            ? React.createElement(
+                "label",
+                { className: "vendor-input" },
+                React.createElement(
+                  "span",
+                  null,
+                  "Vendor name for uploads (extracted from @ mention if present)"
+                ),
+                React.createElement("input", {
+                  type: "text",
+                  placeholder: "e.g. Tech Supplier",
+                  value: uploadVendor,
+                  onChange: (event) => setUploadVendor(event.target.value),
+                  disabled: isSending,
+                })
+              )
+            : null,
+          React.createElement("textarea", {
+            placeholder: "Ask anything or drag files here. Use @vendor to scope offers.",
+            value: composer,
+            onChange: (event) => setComposer(event.target.value),
+            onKeyDown: handleKeyDown,
+            disabled: isSending,
+          }),
+          React.createElement(
+            "div",
+            { className: "composer-controls" },
+            React.createElement("label", { className: "control-ghost" },
+              React.createElement("input", {
+                type: "file",
+                multiple: true,
+                hidden: true,
+                onChange: (event) => {
+                  if (event.target.files) {
+                    handleFiles(event.target.files);
+                    event.target.value = "";
+                  }
+                },
+                disabled: isSending,
+              }),
+              "Attach files"
+            ),
+            React.createElement(
+              "button",
+              {
+                type: "button",
+                className: "control-ghost",
+                onClick: () => window.open(config.template_download, "_blank", "noopener"),
+                disabled: isSending,
+              },
+              "Download template"
+            ),
+            React.createElement("button", {
+              type: "button",
+              onClick: handleSend,
+              disabled: isSending,
+            }, isSending ? "Working…" : "Send")
+          )
+        )
+      );
+    }
+
+    const root = document.getElementById("chat-root");
+    if (root) {
+      const app = React.createElement(ChatApp, { config });
+      ReactDOM.createRoot(root).render(app);
+    }
+  })();
+</script>
+{% endblock %}

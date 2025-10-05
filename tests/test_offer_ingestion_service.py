@@ -70,3 +70,22 @@ def test_price_history_closes_prior_span_on_price_change(session) -> None:
     assert second.valid_to == t2.replace(tzinfo=None)
     assert third.price == 120.0
     assert third.valid_to is None
+
+
+def test_out_of_range_quantity_is_dropped(session) -> None:
+    service = OfferIngestionService(session)
+
+    payload = RawOffer(
+        product_name="Widget",
+        vendor_name="VendorB",
+        price=50.0,
+        quantity=3_000_000_000,
+        raw_payload={"line": "Widget 3000000000 units"},
+    )
+
+    service.ingest([payload])
+    session.commit()
+
+    stored_offer = session.exec(select(models.Offer)).one()
+    assert stored_offer.quantity is None
+    assert stored_offer.raw_payload["dropped_quantity"] == 3_000_000_000

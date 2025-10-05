@@ -3,11 +3,17 @@ from __future__ import annotations
 from datetime import datetime, timezone
 from typing import Iterable
 
+import logging
+
 from sqlmodel import Session, select
 
 from app.core.config import settings
 from app.db import models
 from app.ingestion.types import RawOffer
+
+
+logger = logging.getLogger(__name__)
+MAX_SIGNED_INT = 2_147_483_647
 
 
 class OfferIngestionService:
@@ -30,17 +36,34 @@ class OfferIngestionService:
             vendor = self._get_or_create_vendor(payload.vendor_name or vendor_name, vendor_cache)
             product = self._get_or_create_product(payload, vendor)
 
+            quantity = payload.quantity
+            raw_payload_data: dict | None = None
+            if quantity is not None and abs(quantity) > MAX_SIGNED_INT:
+                logger.warning(
+                    "Dropping out-of-range quantity during ingestion",
+                    extra={
+                        "product": payload.product_name,
+                        "vendor": vendor.name,
+                        "quantity": quantity,
+                    },
+                )
+                raw_payload_data = dict(payload.raw_payload) if payload.raw_payload else {}
+                raw_payload_data["dropped_quantity"] = quantity
+                quantity = None
+            elif payload.raw_payload:
+                raw_payload_data = payload.raw_payload
+
             offer = models.Offer(
                 product_id=product.id,
                 vendor_id=vendor.id,
                 price=payload.price,
                 currency=payload.currency or settings.default_currency,
-                quantity=payload.quantity,
+                quantity=quantity,
                 condition=payload.condition,
                 location=payload.warehouse,
                 captured_at=self._normalize_utc(payload.captured_at),
                 notes=payload.notes,
-                raw_payload=payload.raw_payload,
+                raw_payload=raw_payload_data,
                 source_document_id=source_document.id if source_document else None,
             )
             self.session.add(offer)

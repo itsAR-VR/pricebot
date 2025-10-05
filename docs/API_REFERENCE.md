@@ -30,6 +30,8 @@ Base URL (production): `https://your-app.up.railway.app`
 | `/documents` | GET | List ingested source documents |
 | `/documents/{id}` | GET | Get document details |
 | `/admin/documents` | GET | Operator UI dashboard (HTML) |
+| `/chat/tools/products/resolve` | POST | Resolve catalog products for chat queries |
+| `/chat/tools/offers/search-best-price` | POST | Best-price bundles for resolved products |
 
 ---
 
@@ -384,6 +386,151 @@ curl "http://localhost:8000/documents/doc123..."
 
 ---
 
+## 8. Chat Tools
+
+Endpoints powering the conversational chat experience.
+
+### `POST /chat/tools/products/resolve`
+
+Resolve catalog products that match a free-form search prompt. Returns paginated matches plus metadata for client-side navigation.
+
+**Request Body:**
+```json
+{
+  "query": "iphone 17",
+  "limit": 5,
+  "offset": 0
+}
+```
+
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| `query` | string (1-200) | ✓ | Search text (trimmed of whitespace) |
+| `limit` | int (1-10) | ✗ | Page size (default `5`) |
+| `offset` | int (>=0) | ✗ | Number of matches to skip |
+
+**Response:**
+```json
+{
+  "products": [
+    {
+      "id": "def456...",
+      "canonical_name": "iPhone 17 Pro 256GB",
+      "model_number": "IP17PRO-256",
+      "upc": "123456789012",
+      "match_source": "canonical_name",
+      "spec": {
+        "image_url": "https://cdn.example.com/iphone17.png"
+      }
+    }
+  ],
+  "limit": 5,
+  "offset": 0,
+  "total": 9,
+  "has_more": true,
+  "next_offset": 5
+}
+```
+
+**Notes:**
+- `match_source` indicates why the product matched (`canonical_name`, `alias`, `model_number`, `upc`).
+- `total` reflects the count of unique products matching the query.
+- Use `next_offset` to request the next page if `has_more` is true.
+
+### `POST /chat/tools/offers/search-best-price`
+
+Resolve product matches and return their best offers with optional filters for the chat UI.
+
+**Request Body:**
+```json
+{
+  "query": "iphone 17",
+  "limit": 5,
+  "offset": 0,
+  "filters": {
+    "vendor_id": "f36e1066-7665-44ea-8ca9-70288f10f99a",
+    "condition": "New",
+    "location": "Miami",
+    "min_price": 900,
+    "max_price": 1200,
+    "captured_since": "2025-09-20T00:00:00Z"
+  }
+}
+```
+
+| Filter | Type | Description |
+|--------|------|-------------|
+| `vendor_id` | UUID | Restrict offers to a specific vendor (404 if missing) |
+| `condition` | string | Match offer condition (case-insensitive) |
+| `location` | string | Match location substring (case-insensitive) |
+| `min_price` / `max_price` | float | Price band (must satisfy `min_price ≤ max_price`) |
+| `captured_since` | datetime | Return offers captured at/after timestamp |
+
+**Response:**
+```json
+{
+  "results": [
+    {
+      "product": {
+        "id": "def456...",
+        "canonical_name": "iPhone 17 Pro 256GB",
+        "model_number": "IP17PRO-256",
+        "upc": "123456789012",
+        "match_source": "canonical_name",
+        "image_url": "https://cdn.example.com/iphone17.png",
+        "spec": {
+          "color": "Natural Titanium"
+        }
+      },
+      "best_offer": {
+        "id": "offer123...",
+        "price": 1099.0,
+        "currency": "USD",
+        "captured_at": "2025-09-23T12:34:56Z",
+        "quantity": 5,
+        "condition": "New",
+        "location": "Miami",
+        "vendor": {
+          "id": "f36e1066-7665-44ea-8ca9-70288f10f99a",
+          "name": "Tech Supplier",
+          "contact_info": {
+            "phone": "+1-222-555-0000"
+          }
+        },
+        "source_document": {
+          "id": "doc123...",
+          "file_name": "miami-pricelist.xlsx",
+          "file_type": "spreadsheet",
+          "status": "processed",
+          "ingest_completed_at": "2025-09-23T10:00:15Z"
+        }
+      },
+      "alternate_offers": []
+    }
+  ],
+  "limit": 5,
+  "offset": 0,
+  "total": 3,
+  "has_more": true,
+  "next_offset": 5,
+  "applied_filters": {
+    "vendor_id": "f36e1066-7665-44ea-8ca9-70288f10f99a",
+    "condition": "New",
+    "location": "Miami",
+    "min_price": 900,
+    "max_price": 1200,
+    "captured_since": "2025-09-20T00:00:00Z"
+  }
+}
+```
+
+**Notes:**
+- Requests with `filters.vendor_id` validate vendor existence and return `404` when missing.
+- `limit` controls both the number of product bundles and the maximum offers per product.
+- Alternate offers are sorted by ascending price, then most recent capture time.
+
+---
+
 ## Error Responses
 
 All endpoints return standard HTTP status codes:
@@ -489,6 +636,4 @@ openapi-generator-cli generate \
 ---
 
 **Last Updated:** September 30, 2025
-
-
 

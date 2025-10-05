@@ -7,6 +7,7 @@ from typing import Optional
 from uuid import UUID, uuid4
 
 from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, UploadFile
+from fastapi.responses import FileResponse
 from pydantic import BaseModel
 from sqlalchemy.exc import IntegrityError, SQLAlchemyError
 from sqlmodel import Session, select
@@ -17,6 +18,9 @@ from app.core.config import settings
 from app.db import models
 from app.ingestion import registry
 from app.services.offers import OfferIngestionService
+
+BASE_DIR = Path(__file__).resolve().parents[3]
+TEMPLATE_PATH = BASE_DIR / "storage" / "templates" / "vendor_price_template.xlsx"
 
 router = APIRouter(prefix="/documents", tags=["documents"])
 logger = logging.getLogger(__name__)
@@ -73,6 +77,17 @@ def _ensure_storage_directory(storage_dir: Path) -> Path:
     return storage_root
 
 
+@router.get("/templates/vendor-price", include_in_schema=False)
+def download_vendor_template() -> FileResponse:
+    if not TEMPLATE_PATH.exists():
+        raise HTTPException(status_code=404, detail="Vendor template not found")
+    return FileResponse(
+        TEMPLATE_PATH,
+        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        filename="vendor_price_template.xlsx",
+    )
+
+
 def _remove_file_if_exists(path: Path) -> None:
     """Best-effort file cleanup compatible with older Python versions."""
 
@@ -84,45 +99,41 @@ def _remove_file_if_exists(path: Path) -> None:
         logger.warning("Unable to remove temporary file %s during cleanup", path, exc_info=True)
 
 
-@router.post("/upload", summary="Upload and process a price document")
-async def upload_document(
-    file: UploadFile = File(...),
-    vendor_name: str = Form(...),
-    processor: Optional[str] = Form(None),
-    session: Session = Depends(get_db),
-) -> dict:
-    """
-    Upload a price sheet document (Excel, CSV, PDF, image, or text file).
+_SPREADSHEET_EXTS = {".xlsx", ".xls", ".csv"}
+_DOCUMENT_EXTS = {".pdf", ".jpg", ".jpeg", ".png"}
+_TEXT_EXTS = {".txt"}
+_SUPPORTED_EXTS = _SPREADSHEET_EXTS | _DOCUMENT_EXTS | _TEXT_EXTS
 
-    - **file**: The document file to upload
-    - **vendor_name**: Name of the vendor (e.g., "Abdursajid", "SB Technology")
-    - **processor**: Optional processor type override (spreadsheet, document_text, whatsapp_text)
-    """
-    logger.info(
-        "Upload request received: filename=%s vendor=%s processor=%s",
-        file.filename,
-        vendor_name,
-        processor or "auto",
+
+def _determine_processor(file_ext: str, override: Optional[str]) -> str:
+    if override and override != "auto":
+        return override
+
+    if file_ext in _SPREADSHEET_EXTS:
+        return "spreadsheet"
+    if file_ext in _DOCUMENT_EXTS:
+        return "document_text"
+    if file_ext in _TEXT_EXTS:
+        return "whatsapp_text"
+
+    supported = ", ".join(sorted(_SUPPORTED_EXTS))
+    raise HTTPException(
+        status_code=400,
+        detail=f"Unsupported file type: {file_ext}. Supported: {supported}",
     )
 
-    original_name = Path(file.filename or "uploaded_file").name
-    file_ext = Path(original_name).suffix.lower()
 
-    if not processor or processor == "auto":
-        # Auto-detect based on file extension
-        if file_ext in {".xlsx", ".xls", ".csv"}:
-            processor_name = "spreadsheet"
-        elif file_ext in {".pdf", ".jpg", ".jpeg", ".png"}:
-            processor_name = "document_text"
-        elif file_ext == ".txt":
-            processor_name = "whatsapp_text"
-        else:
-            raise HTTPException(
-                status_code=400,
-                detail=f"Unsupported file type: {file_ext}. Supported: .xlsx, .xls, .csv, .pdf, .jpg, .png, .txt"
-            )
-    else:
-        processor_name = processor
+async def _process_single_upload(
+    upload_file: UploadFile,
+    *,
+    vendor_name: str,
+    processor_override: Optional[str],
+    session: Session,
+    storage_root: Path,
+) -> dict:
+    original_name = Path(upload_file.filename or "uploaded_file").name
+    file_ext = Path(original_name).suffix.lower()
+    processor_name = _determine_processor(file_ext, processor_override)
 
     logger.debug("Processor selected: %s", processor_name)
 
@@ -131,10 +142,8 @@ async def upload_document(
     except KeyError as exc:  # pragma: no cover - defensive
         raise HTTPException(
             status_code=400,
-            detail=f"Unknown processor: {processor_name}. Available: {list(registry.processors.keys())}"
+            detail=f"Unknown processor: {processor_name}. Available: {list(registry.processors.keys())}",
         ) from exc
-
-    storage_root = _ensure_storage_directory(Path(settings.ingestion_storage_dir))
 
     now_utc = _utc_now()
     timestamp = now_utc.strftime("%Y%m%dT%H%M%SZ")
@@ -143,7 +152,7 @@ async def upload_document(
     storage_filename = f"{timestamp}_{unique_suffix}_{safe_name}"
     file_path = storage_root / storage_filename
 
-    content = await file.read()
+    content = await upload_file.read()
     try:
         file_path.write_bytes(content)
     except OSError as exc:
@@ -230,17 +239,18 @@ async def upload_document(
             "message": f"Processed {len(persisted)} offers",
             "document_id": str(source_doc.id),
             "offers_count": len(persisted),
+            "filename": original_name,
         }
 
-    except Exception as e:
+    except Exception as exc:
         session.rollback()
         logger.exception("Upload processing failed for document %s", source_doc.id)
         source_doc.status = "failed"
         source_doc.ingest_completed_at = _utc_now()
         if source_doc.extra:
-            source_doc.extra["errors"] = [str(e)]
+            source_doc.extra["errors"] = [str(exc)]
         else:
-            source_doc.extra = {"errors": [str(e)]}
+            source_doc.extra = {"errors": [str(exc)]}
         session.add(source_doc)
         try:
             session.commit()
@@ -249,7 +259,90 @@ async def upload_document(
             logger.exception(
                 "Failed to persist failure status for document %s", source_doc.id
             )
-        raise HTTPException(status_code=500, detail=f"Processing failed: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Processing failed: {str(exc)}")
+
+@router.post("/upload", summary="Upload and process price documents")
+async def upload_document(
+    files: list[UploadFile] | None = File(default=None),
+    file: UploadFile | None = File(default=None),
+    vendor_name: str = Form(...),
+    processor: Optional[str] = Form(None),
+    session: Session = Depends(get_db),
+) -> dict:
+    """
+    Upload one or many price sheet documents (Excel, CSV, PDF, images, or text files).
+
+    - **file/files**: Document(s) to upload
+    - **vendor_name**: Name of the vendor (e.g., "Abdursajid", "SB Technology")
+    - **processor**: Optional processor type override (spreadsheet, document_text, whatsapp_text)
+    """
+
+    uploads: list[UploadFile] = []
+    if files:
+        uploads.extend(files)
+    if file:
+        uploads.append(file)
+
+    if not uploads:
+        raise HTTPException(status_code=400, detail="No files were provided for upload")
+
+    storage_root = _ensure_storage_directory(Path(settings.ingestion_storage_dir))
+    results: list[dict] = []
+    errors: list[dict] = []
+
+    for upload in uploads:
+        logger.info(
+            "Upload request received: filename=%s vendor=%s processor=%s",
+            upload.filename,
+            vendor_name,
+            processor or "auto",
+        )
+
+        try:
+            result = await _process_single_upload(
+                upload,
+                vendor_name=vendor_name,
+                processor_override=processor,
+                session=session,
+                storage_root=storage_root,
+            )
+            results.append(result)
+        except HTTPException as exc:
+            errors.append(
+                {
+                    "filename": Path(upload.filename or "uploaded_file").name,
+                    "detail": exc.detail,
+                }
+            )
+        except Exception as exc:  # pragma: no cover - defensive
+            logger.exception("Unexpected failure while handling %s", upload.filename)
+            errors.append(
+                {
+                    "filename": Path(upload.filename or "uploaded_file").name,
+                    "detail": str(exc),
+                }
+            )
+
+    if not errors and len(results) == 1:
+        return results[0]
+
+    if errors and not results:
+        aggregated = "; ".join(f"{err['filename']}: {err['detail']}" for err in errors)
+        raise HTTPException(status_code=500, detail=f"Processing failed: {aggregated}")
+
+    status = "success" if not errors else "partial_success"
+    message = "Processed 0 document(s)"
+    if results:
+        message = f"Processed {len(results)} document(s)"
+
+    return {
+        "status": status,
+        "message": message,
+        "processed_count": len(results),
+        "failed_count": len(errors),
+        "processed": results,
+        "errors": errors,
+    }
 
 
 

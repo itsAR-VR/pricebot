@@ -17,6 +17,7 @@ from app.db import models
 
 router = APIRouter(prefix="/admin", tags=["operator"], include_in_schema=False)
 upload_router = APIRouter(tags=["upload"], include_in_schema=False)
+chat_router = APIRouter(tags=["chat"], include_in_schema=False)
 
 _templates = Jinja2Templates(directory=str(Path(__file__).resolve().parent.parent / "templates"))
 
@@ -30,6 +31,25 @@ async def upload_page(request: Request) -> HTMLResponse:
         "subtitle": "Submit price lists, catalog PDFs, or WhatsApp logs for ingestion.",
     }
     return _templates.TemplateResponse(request, "upload.html", context)
+
+
+@chat_router.get("/chat", response_class=HTMLResponse)
+async def chat_page(request: Request) -> HTMLResponse:
+    """Render the lightweight chat prototype that calls the new tool endpoints."""
+
+    context = {
+        "request": request,
+        "title": "Pricebot Chat",
+        "api_config": {
+            "resolve": "/chat/tools/products/resolve",
+            "best_price": "/chat/tools/offers/search-best-price",
+            "upload": "/documents/upload",
+            "document": "/documents",
+            "vendors": "/vendors",
+            "template_download": "/documents/templates/vendor-price",
+        },
+    }
+    return _templates.TemplateResponse(request, "chat.html", context)
 
 
 @router.get("/documents", response_class=HTMLResponse)

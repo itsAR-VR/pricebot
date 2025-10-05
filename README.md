@@ -140,6 +140,11 @@ railway domain
 
 See **[PROJECT_PLAN.md](docs/PROJECT_PLAN.md)** for full roadmap.
 
+## 🗨️ Conversational Interface (Design)
+- Chat workspace spec (Cursor-style UI, GPT-5 orchestration, tool registry) captured in **[CHAT_INTERFACE_SPEC.md](docs/CHAT_INTERFACE_SPEC.md)**.
+- Spreadsheet upload template defined from real vendor sheets; see the "Spreadsheet Template Guidelines" section for required headers and formatting rules.
+- Upcoming chat release will surface download links for the template and live ingestion status inside the uploader.
+
 ---
 
 ## 📁 Repository Structure
