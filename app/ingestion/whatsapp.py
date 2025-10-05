@@ -1,13 +1,19 @@
 from __future__ import annotations
 
+import logging
 import re
 from pathlib import Path
 from typing import Any
 
 from app.core.config import settings
 from app.ingestion.base import BaseIngestionProcessor, registry
-from app.ingestion.types import IngestionResult
+from app.ingestion.types import IngestionResult, RawOffer
 from app.ingestion.text_utils import parse_offer_line
+from app.services.llm_extraction import (
+    ExtractionContext,
+    LLMUnavailableError,
+    OfferLLMExtractor,
+)
 
 _TIME_PATTERN = re.compile(r"^\d{1,2}:\d{2}")
 _SKIP_PREFIXES = (
@@ -33,10 +39,15 @@ _SKIP_PREFIXES = (
 
 _REACTION_PREFIXES = ("you reacted", "tony reacted", "reacted")
 
+logger = logging.getLogger(__name__)
+
 
 class WhatsAppTextProcessor(BaseIngestionProcessor):
     name = "whatsapp_text"
     supported_suffixes = (".txt",)
+
+    def __init__(self, llm_extractor: OfferLLMExtractor | None = None) -> None:
+        self._llm_extractor = llm_extractor
 
     def process(self, file_path: Path, *, context: dict[str, Any] | None = None) -> IngestionResult:
         context = context or {}
@@ -48,11 +59,13 @@ class WhatsAppTextProcessor(BaseIngestionProcessor):
         except UnicodeDecodeError:
             text = file_path.read_text(encoding="latin-1", errors="ignore")
 
-        offers = []
-        errors = []
+        raw_lines = text.splitlines()
+
+        offers: list[RawOffer] = []
+        errors: list[str] = []
         current_speaker: str | None = None
 
-        for idx, raw_line in enumerate(text.splitlines(), start=1):
+        for idx, raw_line in enumerate(raw_lines, start=1):
             line = raw_line.strip()
             if not line:
                 continue
@@ -86,10 +99,59 @@ class WhatsAppTextProcessor(BaseIngestionProcessor):
                 if "$" in line or "usd" in line.lower():
                     errors.append(f"line {idx}: {error}")
 
-        if not offers and not errors:
-            errors.append("no offers extracted from WhatsApp transcript")
+        prefer_llm = bool(context.get("prefer_llm"))
+        use_llm = prefer_llm or not offers
 
-        return IngestionResult(offers=offers, errors=errors)
+        llm_errors: list[str] = []
+        if use_llm:
+            llm = self._resolve_llm_extractor(context)
+            if llm is not None:
+                try:
+                    llm_offers, warnings = llm.extract_offers_from_lines(
+                        raw_lines,
+                        context=ExtractionContext(
+                            vendor_hint=default_vendor or "WhatsApp Vendor",
+                            currency_hint=default_currency,
+                            document_name=file_path.name,
+                            document_kind="whatsapp_transcript",
+                            extra_instructions=(
+                                "Messages are from a WhatsApp chat. Only return rows that clearly describe a "
+                                "product AND a price. Ignore greetings, reactions, and status updates."
+                            ),
+                        ),
+                    )
+                except LLMUnavailableError as exc:
+                    llm_errors.append(str(exc))
+                else:
+                    if llm_offers:
+                        if prefer_llm and offers:
+                            combined_errors = errors + warnings
+                            return IngestionResult(offers=llm_offers, errors=combined_errors)
+                        if not offers:
+                            return IngestionResult(offers=llm_offers, errors=warnings)
+                    llm_errors.extend(warnings)
+
+        if offers:
+            combined_errors = errors + llm_errors
+            return IngestionResult(offers=offers, errors=combined_errors)
+
+        combined_errors = errors + llm_errors
+        if not combined_errors:
+            combined_errors.append("no offers extracted from WhatsApp transcript")
+
+        return IngestionResult(offers=[], errors=combined_errors)
+
+    def _resolve_llm_extractor(self, context: dict[str, Any]) -> OfferLLMExtractor | None:
+        if context.get("disable_llm"):
+            return None
+        if self._llm_extractor is not None:
+            return self._llm_extractor
+        try:
+            self._llm_extractor = OfferLLMExtractor()
+        except LLMUnavailableError as exc:
+            logger.debug("LLM extractor unavailable: %s", exc)
+            return None
+        return self._llm_extractor
 
 
 registry.register(WhatsAppTextProcessor())

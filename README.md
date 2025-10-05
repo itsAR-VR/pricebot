@@ -36,8 +36,8 @@ python -m app.cli.ingest vendor_prices.xlsx --vendor "Vendor Name"
 
 ### Ingestion Processors
 - ✅ **Spreadsheets** - Excel/CSV with auto-schema detection
-- ✅ **WhatsApp** - Chat transcript parsing (regex-based)
-- ✅ **OCR/PDF** - Images and PDFs via Tesseract/pypdf
+- ✅ **WhatsApp** - Chat transcript parsing with optional GPT fallback
+- ✅ **OCR/PDF** - Images/PDFs with GPT vision OCR fallback (pypdf + OpenAI)
 
 ### Data Management
 - ✅ **Product Deduplication** - Match by UPC → SKU → name
@@ -74,7 +74,7 @@ python -m app.cli.ingest "../Raw Data from Abdursajid.xlsx" --vendor "Raw Vendor
 # WhatsApp text export (force the chat parser)
 python -m app.cli.ingest WAbot/whatsapp_business_chat_data.txt --processor whatsapp_text
 
-# Image or PDF price sheet (requires `pip install -e .[ocr,pdf]`)
+# Image or PDF price sheet (requires `pip install -e .[ocr,pdf]` plus `ENABLE_OPENAI=true` if you want GPT OCR)
 python -m app.cli.ingest vendor_sheet.png --processor document_text --vendor "Sample Vendor"
 
 # Review ingested documents
@@ -90,6 +90,16 @@ PY
 ```
 
 The default configuration uses a local SQLite database (`pricebot.db`). Override settings via environment variables as defined in `app/core/config.py`.
+
+### LLM Normalization
+To enable the non-structured ingestion pipeline, configure OpenAI credentials before running the API or CLI:
+
+```bash
+export ENABLE_OPENAI=true
+export OPENAI_API_KEY=sk-your-key
+```
+
+With the flag enabled, document and WhatsApp processors fall back to GPT-based extraction when heuristics miss price lines. Use `--option prefer_llm=true` with the CLI to force AI parsing for specific runs.
 
 ### Testing
 ```bash
@@ -130,7 +140,7 @@ railway domain
 **Version:** 0.1.0 (MVP)  
 **Data Ingested:** 543 products, 37 offers, 20 documents  
 **API Endpoints:** 11 routes across 6 categories  
-**Test Coverage:** 14/14 passing  
+**Test Coverage:** 16/16 passing  
 **Ready for:** Production deployment
 
 **Next Milestones:**

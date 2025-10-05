@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import base64
+import logging
 from pathlib import Path
 from typing import Any
 
@@ -8,6 +9,11 @@ from app.core.config import settings
 from app.ingestion.base import BaseIngestionProcessor, registry
 from app.ingestion.text_utils import extract_offers_from_lines
 from app.ingestion.types import IngestionResult
+from app.services.llm_extraction import (
+    ExtractionContext,
+    LLMUnavailableError,
+    OfferLLMExtractor,
+)
 
 try:  # pragma: no cover - optional dependency
     import openai
@@ -21,12 +27,22 @@ except ImportError:  # pragma: no cover
 
 _IMAGE_SUFFIXES = {".png", ".jpg", ".jpeg", ".webp", ".tif", ".tiff"}
 
+logger = logging.getLogger(__name__)
+
 
 class DocumentExtractionProcessor(BaseIngestionProcessor):
     name = "document_text"
     supported_suffixes = tuple(_IMAGE_SUFFIXES | {".pdf"})
 
-    def process(self, file_path: Path, *, context: dict[str, Any] | None = None) -> IngestionResult:
+    def __init__(self, llm_extractor: OfferLLMExtractor | None = None) -> None:
+        self._llm_extractor = llm_extractor
+
+    def process(
+        self,
+        file_path: Path,
+        *,
+        context: dict[str, Any] | None = None,
+    ) -> IngestionResult:
         context = context or {}
         default_vendor = context.get("vendor_name") or file_path.stem
         default_currency = context.get("currency", settings.default_currency)
@@ -36,16 +52,59 @@ class DocumentExtractionProcessor(BaseIngestionProcessor):
         except RuntimeError as exc:  # pragma: no cover - runtime path
             return IngestionResult(offers=[], errors=[str(exc)])
 
+        llm_errors: list[str] = []
+        llm = self._resolve_llm_extractor(context)
+        if llm is not None:
+            try:
+                offers, warnings = llm.extract_offers_from_lines(
+                    lines,
+                    context=ExtractionContext(
+                        vendor_hint=default_vendor,
+                        currency_hint=default_currency,
+                        document_name=file_path.name,
+                        document_kind=self._document_kind(file_path),
+                        extra_instructions=context.get("llm_instructions"),
+                    ),
+                )
+            except LLMUnavailableError as exc:
+                llm_errors.append(str(exc))
+            else:
+                if offers:
+                    return IngestionResult(offers=offers, errors=warnings)
+                llm_errors.extend(warnings)
+
         offers, errors = extract_offers_from_lines(
             lines,
             vendor_name=default_vendor,
             default_currency=default_currency,
         )
 
-        if not offers and not errors:
-            errors.append("no pricing information recognized from document")
+        combined_errors = llm_errors + errors
+        if not offers and not combined_errors:
+            combined_errors.append("no pricing information recognized from document")
 
-        return IngestionResult(offers=offers, errors=errors)
+        return IngestionResult(offers=offers, errors=combined_errors)
+
+    def _resolve_llm_extractor(self, context: dict[str, Any]) -> OfferLLMExtractor | None:
+        if context.get("disable_llm"):
+            return None
+        if self._llm_extractor is not None:
+            return self._llm_extractor
+        try:
+            self._llm_extractor = OfferLLMExtractor()
+        except LLMUnavailableError as exc:
+            logger.debug("LLM extractor unavailable: %s", exc)
+            return None
+        return self._llm_extractor
+
+    @staticmethod
+    def _document_kind(file_path: Path) -> str:
+        suffix = file_path.suffix.lower()
+        if suffix == ".pdf":
+            return "pdf_document"
+        if suffix in _IMAGE_SUFFIXES:
+            return "image"
+        return suffix.lstrip(".") or "unstructured"
 
     def _extract_lines(self, file_path: Path) -> list[str]:
         """Extract text lines from PDF or image using GPT-5 vision API."""

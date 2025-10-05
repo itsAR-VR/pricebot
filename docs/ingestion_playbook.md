@@ -5,7 +5,7 @@ This guide covers day-to-day ingestion tasks for spreadsheets, WhatsApp transcri
 ## 1. Preparing Source Files
 - **Spreadsheets**: Save as `.xlsx`, `.xls`, or `.csv`. Use the standard header set (`MODEL/SKU`, `DESCRIPTION`, `PRICE`, `QTY`, `CONDITION`) with numeric values only for price/quantity (no currency symbols). A ready-to-use workbook ships at `/documents/templates/vendor-price`; see `docs/CHAT_INTERFACE_SPEC.md#spreadsheet-template-guidelines` for details.
 - **WhatsApp transcripts**: Export the chat as text (`.txt`) with media omitted. Place the file inside the storage directory (`storage/` locally or `/data/storage` on Railway).
-- **Images / PDFs**: Supported formats include `.png`, `.jpg`, `.jpeg`, `.webp`, `.tif`, `.tiff`, and `.pdf`. For PDFs the text layer is extracted; for images we use Tesseract OCR (enable extras via `pip install -e .[ocr,pdf]`).
+- **Images / PDFs**: Supported formats include `.png`, `.jpg`, `.jpeg`, `.webp`, `.tif`, `.tiff`, and `.pdf`. Text-first PDFs are parsed directly; scanned paperwork and photos are routed through the GPT vision/OCR pipeline when `ENABLE_OPENAI=true` with `OPENAI_API_KEY` configured (falls back to heuristics if disabled).
 
 ## 2. Local CLI Commands
 ```bash
@@ -29,12 +29,12 @@ Each run copies the artefact into `INGESTION_STORAGE_DIR`, creates a `source_doc
 ## 4. Handling Failures
 1. Check the `/documents` detail view for parse errors stored in `extra.errors`.
 2. Fix the underlying source (or adjust processor options) and rerun the CLI. Re-ingesting will create a new document snapshot.
-3. If a vendor consistently uses a noisy format, consider adding a custom processor or augmenting `text_utils` heuristics.
+3. If a vendor consistently uses a noisy format, enable the LLM normalization pipeline (`ENABLE_OPENAI=true`) or add processor-specific overrides via the `prefer_llm` ingestion context flag.
 
 ## 5. Automation Tips
 - Combine the CLI with cron/CI jobs (`railway run ...`) to schedule recurring imports.
 - Store vendor-specific files in predictable locations (e.g. `/data/storage/vendors/<name>/latest.xlsx`) so scheduled jobs can re-use the same command.
-- For WhatsApp, set up a nightly export via WhatsApp Business API or alternate automation and drop the file into the storage directory prior to the scheduled job.
+- For WhatsApp, set up a nightly export via WhatsApp Business API or alternate automation and drop the file into the storage directory prior to the scheduled job. To force LLM extraction for especially messy chats, pass `--option prefer_llm=true` to the CLI or set `prefer_llm` in the ingestion context.
 
 ## 6. Post-Ingestion Steps
 - Verify new offers in `/offers` (filter by `vendor_id` or `product_id`).
