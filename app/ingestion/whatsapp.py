@@ -107,6 +107,14 @@ class WhatsAppTextProcessor(BaseIngestionProcessor):
             llm = self._resolve_llm_extractor(context)
             if llm is not None:
                 try:
+                    extra_instructions = (
+                        "Messages are from a WhatsApp chat. Only return rows that clearly describe a "
+                        "product AND a price. Ignore greetings, reactions, and status updates."
+                    )
+                    custom_prompt = context.get("llm_instructions")
+                    if custom_prompt:
+                        extra_instructions = f"{extra_instructions} {custom_prompt}"
+
                     llm_offers, warnings = llm.extract_offers_from_lines(
                         raw_lines,
                         context=ExtractionContext(
@@ -114,21 +122,29 @@ class WhatsAppTextProcessor(BaseIngestionProcessor):
                             currency_hint=default_currency,
                             document_name=file_path.name,
                             document_kind="whatsapp_transcript",
-                            extra_instructions=(
-                                "Messages are from a WhatsApp chat. Only return rows that clearly describe a "
-                                "product AND a price. Ignore greetings, reactions, and status updates."
-                            ),
+                            extra_instructions=extra_instructions,
                         ),
                     )
                 except LLMUnavailableError as exc:
+                    logger.warning("LLM normalization unavailable for WhatsApp ingestion: %s", exc)
                     llm_errors.append(str(exc))
                 else:
                     if llm_offers:
+                        logger.info(
+                            "LLM normalization: processor=whatsapp model=%s offers=%d prefer_llm=%s",
+                            getattr(llm, "model", "unknown"),
+                            len(llm_offers),
+                            prefer_llm,
+                        )
                         if prefer_llm and offers:
                             combined_errors = errors + warnings
                             return IngestionResult(offers=llm_offers, errors=combined_errors)
                         if not offers:
                             return IngestionResult(offers=llm_offers, errors=warnings)
+                    logger.warning(
+                        "LLM normalization returned no offers for WhatsApp transcript %s; using heuristic parsing",
+                        file_path.name,
+                    )
                     llm_errors.extend(warnings)
 
         if offers:
@@ -149,7 +165,7 @@ class WhatsAppTextProcessor(BaseIngestionProcessor):
         try:
             self._llm_extractor = OfferLLMExtractor()
         except LLMUnavailableError as exc:
-            logger.debug("LLM extractor unavailable: %s", exc)
+            logger.warning("LLM extractor unavailable for WhatsApp ingestion: %s", exc)
             return None
         return self._llm_extractor
 

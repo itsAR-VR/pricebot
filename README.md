@@ -99,7 +99,7 @@ export ENABLE_OPENAI=true
 export OPENAI_API_KEY=sk-your-key
 ```
 
-With the flag enabled, document and WhatsApp processors fall back to GPT-based extraction when heuristics miss price lines. Use `--option prefer_llm=true` with the CLI to force AI parsing for specific runs.
+With the flag enabled, document, WhatsApp, and spreadsheet processors fall back to GPT-based extraction when heuristics miss price lines. Use `--option prefer_llm=true` with the CLI to force AI parsing for specific runs (spreadsheets will still merge heuristic-only rows when the LLM skips them).
 
 ### Testing
 ```bash

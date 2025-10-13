@@ -4,6 +4,7 @@ app/__init__.py
 app/main.py
 app/api/deps.py
 app/api/routes/__init__.py
+app/api/routes/chat_tools.py
 app/api/routes/documents.py
 app/api/routes/health.py
 app/api/routes/offers.py
@@ -26,6 +27,8 @@ app/ingestion/text_utils.py
 app/ingestion/types.py
 app/ingestion/whatsapp.py
 app/services/__init__.py
+app/services/chat.py
+app/services/llm_extraction.py
 app/services/offers.py
 app/ui/__init__.py
 app/ui/views.py
@@ -34,7 +37,10 @@ pricebot.egg-info/SOURCES.txt
 pricebot.egg-info/dependency_links.txt
 pricebot.egg-info/requires.txt
 pricebot.egg-info/top_level.txt
+tests/test_chat_tools_api.py
 tests/test_documents_api.py
+tests/test_integration_upload_chat.py
+tests/test_llm_extraction.py
 tests/test_migrations.py
 tests/test_offer_ingestion_service.py
 tests/test_operator_ui.py

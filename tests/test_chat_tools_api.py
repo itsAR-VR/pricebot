@@ -14,6 +14,63 @@ def _override_get_db(session):
     return _get_db
 
 
+def test_diagnostics_endpoint_returns_counts(session):
+    vendor = models.Vendor(name="Vendor Diagnostics")
+    product = models.Product(canonical_name="Pixel 9 Pro")
+    document = models.SourceDocument(
+        file_name="diagnostics.xlsx",
+        file_type="spreadsheet",
+        storage_path="/tmp/diagnostics.xlsx",
+        status="processed_with_warnings",
+        ingest_started_at=datetime.now(timezone.utc),
+        ingest_completed_at=datetime.now(timezone.utc),
+        extra={"ingestion_errors": ["missing price column"]},
+        vendor_id=None,
+    )
+    session.add_all([vendor, product, document])
+    session.flush()
+
+    offer = models.Offer(
+        product_id=product.id,
+        vendor_id=vendor.id,
+        source_document_id=document.id,
+        price=999.0,
+        currency="USD",
+        captured_at=datetime.now(timezone.utc),
+        quantity=5,
+    )
+    session.add(offer)
+    session.commit()
+
+    app.dependency_overrides[get_db] = _override_get_db(session)
+    client = TestClient(app)
+
+    response = client.get("/chat/tools/diagnostics")
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["counts"]["vendors"] == 1
+    assert payload["counts"]["products"] == 1
+    assert payload["counts"]["offers"] == 1
+    assert payload["counts"]["documents"] == 1
+    assert payload["health"]["status"] == "ok"
+    assert payload["feature_flags"]["environment"] == payload["metadata"]["environment"]
+
+    recent_docs = payload["recent_documents"]
+    assert recent_docs
+    doc_entry = next(item for item in recent_docs if item["id"] == str(document.id))
+    assert "missing price column" in doc_entry["ingestion_errors"]
+    assert payload["ingestion_warnings"]
+    assert "missing price column" in payload["ingestion_warnings"][0]["messages"][0]
+
+    download = client.get("/chat/tools/diagnostics/download")
+    assert download.status_code == 200
+    assert "attachment" in download.headers.get("content-disposition", "")
+    downloaded_payload = download.json()
+    assert downloaded_payload["counts"] == payload["counts"]
+
+    app.dependency_overrides.pop(get_db, None)
+
+
 def test_resolve_products_returns_matches(session):
     vendor = models.Vendor(name="Vendor X")
     product = models.Product(
@@ -219,6 +276,68 @@ def test_search_best_price_applies_filters(session):
     assert best_offer["price"] == 1299.0
     assert best_offer["vendor"]["name"] == "Vendor A"
     assert data["results"][0]["alternate_offers"] == []
+
+    app.dependency_overrides.pop(get_db, None)
+
+
+def test_search_best_price_empty_results_include_recent_products(session):
+    vendor = models.Vendor(name="Vendor Q")
+    product_recent = models.Product(canonical_name="Recent Product")
+    product_old = models.Product(canonical_name="Older Product")
+    session.add_all([vendor, product_recent, product_old])
+    session.flush()
+
+    recent_document = models.SourceDocument(
+        file_name="recent.xlsx",
+        file_type="spreadsheet",
+        storage_path="/tmp/recent.xlsx",
+        status="processed",
+        ingest_completed_at=datetime.now(timezone.utc),
+    )
+    old_document = models.SourceDocument(
+        file_name="old.xlsx",
+        file_type="spreadsheet",
+        storage_path="/tmp/old.xlsx",
+        status="processed",
+        ingest_completed_at=datetime.now(timezone.utc),
+    )
+    session.add_all([recent_document, old_document])
+    session.flush()
+
+    recent_offer = models.Offer(
+        product_id=product_recent.id,
+        vendor_id=vendor.id,
+        source_document_id=recent_document.id,
+        price=99.0,
+        currency="USD",
+        captured_at=datetime.now(timezone.utc),
+    )
+    older_offer = models.Offer(
+        product_id=product_old.id,
+        vendor_id=vendor.id,
+        source_document_id=old_document.id,
+        price=149.0,
+        currency="USD",
+        captured_at=datetime.now(timezone.utc) - timedelta(days=7),
+    )
+    session.add_all([recent_offer, older_offer])
+    session.commit()
+
+    app.dependency_overrides[get_db] = _override_get_db(session)
+    client = TestClient(app)
+
+    response = client.post(
+        "/chat/tools/offers/search-best-price",
+        json={"query": "non matching query", "limit": 3},
+    )
+
+    assert response.status_code == 200
+    data = response.json()
+    assert data["results"] == []
+    assert len(data["recent_products"]) == 2
+    assert data["recent_products"][0]["canonical_name"] == "Recent Product"
+    assert data["recent_products"][1]["canonical_name"] == "Older Product"
+    assert data["recent_products"][0]["offer_count"] == 1
 
     app.dependency_overrides.pop(get_db, None)
 

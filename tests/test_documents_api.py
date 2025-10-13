@@ -1,4 +1,7 @@
 from datetime import datetime, timezone
+from io import BytesIO
+
+import pandas as pd
 
 from fastapi.testclient import TestClient
 from sqlmodel import Session, select
@@ -13,6 +16,25 @@ def _override_get_db(session: Session):
         yield session
     return _get_db
 
+
+def test_vendor_template_generates_excel_when_missing(tmp_path):
+    from app.api.routes import documents as documents_routes
+
+    original_template_path = documents_routes.TEMPLATE_PATH
+    documents_routes.TEMPLATE_PATH = tmp_path / "vendor_price_template.xlsx"
+    try:
+        client = TestClient(app)
+        response = client.get("/documents/templates/vendor-price")
+    finally:
+        documents_routes.TEMPLATE_PATH = original_template_path
+
+    assert response.status_code == 200
+    assert response.headers["content-type"].startswith(
+        "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+    )
+    workbook = BytesIO(response.content)
+    frame = pd.read_excel(workbook)
+    assert list(frame.columns) == ["Item", "Price", "Qty", "Condition", "Location", "Notes"]
 
 def test_list_documents(session):
     app.dependency_overrides[get_db] = _override_get_db(session)

@@ -158,6 +158,16 @@
     border-color: rgba(148, 163, 184, 0.65);
   }
 
+  .toggle-control {
+    user-select: none;
+  }
+
+  .toggle-control input {
+    width: 16px;
+    height: 16px;
+    accent-color: #38bdf8;
+  }
+
   .attachment-tray {
     display: flex;
     flex-wrap: wrap;
@@ -425,6 +435,30 @@
     color: rgba(148, 163, 184, 0.75);
   }
 
+  .recent-products {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    padding: 14px 16px;
+    border-radius: 12px;
+    border: 1px solid rgba(56, 189, 248, 0.18);
+    background: rgba(15, 23, 42, 0.55);
+  }
+
+  .recent-products-title {
+    margin: 0;
+    font-size: 14px;
+    font-weight: 600;
+    color: rgba(226, 232, 240, 0.92);
+  }
+
+  .recent-products ul {
+    margin: 0;
+    padding-left: 16px;
+    font-size: 13px;
+    color: rgba(148, 163, 184, 0.85);
+  }
+
   .empty-state {
     align-self: center;
     text-align: center;
@@ -436,6 +470,72 @@
   .drop-target {
     border: 2px dashed rgba(56, 189, 248, 0.55);
     background: rgba(14, 165, 233, 0.12);
+  }
+
+  .doc-summary {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    padding: 12px 14px;
+    border-radius: 12px;
+    border: 1px solid rgba(148, 163, 184, 0.25);
+    background: rgba(15, 23, 42, 0.55);
+  }
+
+  .doc-summary-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    font-size: 13px;
+    color: rgba(226, 232, 240, 0.88);
+  }
+
+  .doc-summary-list {
+    margin: 0;
+    padding-left: 18px;
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    font-size: 13px;
+    color: rgba(226, 232, 240, 0.82);
+  }
+
+  .doc-summary-empty {
+    margin: 0;
+    font-size: 13px;
+    color: rgba(148, 163, 184, 0.75);
+  }
+
+  .diagnostics-section {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    padding: 12px 14px;
+    border-radius: 12px;
+    border: 1px solid rgba(148, 163, 184, 0.2);
+    background: rgba(15, 23, 42, 0.5);
+  }
+
+  .diagnostics-section h3 {
+    margin: 0;
+    font-size: 13px;
+    color: rgba(226, 232, 240, 0.88);
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+  }
+
+  .diagnostics-list {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+  }
+
+  .diagnostics-inline {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    font-size: 13px;
+    color: rgba(226, 232, 240, 0.82);
   }
 
   @media (max-width: 900px) {
@@ -454,6 +554,8 @@
 <script>
   (function () {
     const config = {{ api_config | tojson }};
+    const devMode = {{ dev_mode | tojson }};
+    const environment = {{ environment | tojson }};
     const { useEffect, useMemo, useRef, useState } = React;
 
     function uid(prefix = "id") {
@@ -493,6 +595,59 @@
       if (diffHours < 24) return `${diffHours} hr${diffHours === 1 ? "" : "s"} ago`;
       const diffDays = Math.round(diffHours / 24);
       return `${diffDays} day${diffDays === 1 ? "" : "s"} ago`;
+    }
+
+    const DIAGNOSTIC_KEYWORDS = [
+      "connected",
+      "connection",
+      "backend",
+      "database",
+      "diagnostic",
+      "diagnostics",
+      "are you up",
+      "are you online",
+      "system status",
+      "system health",
+      "health check",
+      "status",
+      "ping",
+    ];
+
+    const SUMMARY_KEYWORDS = [
+      "what products",
+      "which products",
+      "what's in",
+      "what is in",
+      "what is inside",
+      "what are in",
+      "what are these",
+      "what is this sheet",
+      "what's this sheet",
+      "summary",
+      "summarize",
+      "summarise",
+      "what's their price",
+      "what are their prices",
+      "what's the price",
+      "what is the price",
+      "what quantity",
+      "what quantities",
+      "what's listed",
+      "list the products",
+    ];
+
+    function detectIntent({ query, hasAttachments }) {
+      const normalized = (query || "").toLowerCase();
+      if (normalized && DIAGNOSTIC_KEYWORDS.some((phrase) => normalized.includes(phrase))) {
+        return "diagnostics";
+      }
+      if (
+        hasAttachments &&
+        (!normalized || SUMMARY_KEYWORDS.some((phrase) => normalized.includes(phrase)))
+      ) {
+        return "document_summary";
+      }
+      return "best_price";
     }
 
     function AttachmentPill({ attachment, onRemove }) {
@@ -743,6 +898,29 @@
           message.summary
             ? React.createElement("p", null, message.summary)
             : null,
+          message.recentProducts && message.recentProducts.length
+            ? React.createElement(
+                "div",
+                { className: "recent-products" },
+                React.createElement("p", { className: "recent-products-title" }, "Recently ingested products"),
+                React.createElement(
+                  "ul",
+                  null,
+                  message.recentProducts.map((item) => {
+                    const primary =
+                      item.alias && item.alias.toLowerCase() !== (item.canonical_name || "").toLowerCase()
+                        ? `${item.alias} (${item.canonical_name})`
+                        : item.canonical_name;
+                    const seen = item.last_seen ? ` — seen ${relativeTime(item.last_seen)}` : "";
+                    const offerSuffix =
+                      item.offer_count && item.offer_count > 0
+                        ? ` • ${item.offer_count} offer${item.offer_count === 1 ? "" : "s"}`
+                        : "";
+                    return React.createElement("li", { key: item.id }, `${primary}${seen}${offerSuffix}`);
+                  })
+                )
+              )
+            : null,
           message.bundles.map((bundle) =>
             React.createElement(OfferBundle, { key: bundle.product.id, bundle })
           ),
@@ -832,7 +1010,7 @@
       );
     }
 
-    function ChatApp({ config }) {
+    function ChatApp({ config, devMode, environment }) {
       const [messages, setMessages] = useState(() => [
         {
           id: uid("intro"),
@@ -845,6 +1023,7 @@
       const [composer, setComposer] = useState("");
       const [attachments, setAttachments] = useState([]);
       const [uploadVendor, setUploadVendor] = useState("");
+      const [preferLLM, setPreferLLM] = useState(false);
       const [isSending, setIsSending] = useState(false);
       const [errorBanner, setErrorBanner] = useState(null);
       const dropRef = useRef(null);
@@ -896,7 +1075,7 @@
         return (match || data[0]).id;
       }
 
-      async function uploadFiles(files, vendorName, progressId) {
+      async function uploadFiles(files, vendorName, progressId, preferLLMEnabled = false) {
         if (!files.length) return [];
         updateProgress(progressId, "upload", "active", "Uploading documents…");
         const form = new FormData();
@@ -904,6 +1083,9 @@
           form.append("files", item.file, item.file.name);
         });
         form.append("vendor_name", vendorName);
+        if (preferLLMEnabled) {
+          form.append("prefer_llm", "true");
+        }
         const response = await fetch(config.upload, { method: "POST", body: form });
         if (!response.ok) {
           throw new Error(`Upload failed: ${response.status}`);
@@ -991,11 +1173,13 @@
 
       async function handleSend() {
         const trimmed = composer.trim();
+        const intent = detectIntent({ query: trimmed, hasAttachments: attachments.length > 0 });
+        const shouldUploadAttachments = attachments.length > 0 && intent !== "diagnostics";
+
         if (!trimmed && !attachments.length) {
           return;
         }
-        const requiresVendor = attachments.length > 0;
-        if (requiresVendor && !uploadVendor.trim()) {
+        if (shouldUploadAttachments && !uploadVendor.trim()) {
           setErrorBanner("Provide a vendor name for the uploads (see attachment tray).");
           return;
         }
@@ -1018,32 +1202,236 @@
         const progressId = uid("progress");
         let resolvedDocuments = [];
         let succeeded = false;
+        let shouldResetUploads = false;
+
+        const progressSteps = [];
+        const uploadStepStatus =
+          attachments.length === 0 ? "done" : shouldUploadAttachments ? "pending" : "done";
+        progressSteps.push({
+          id: "upload",
+          label: "Upload attachments",
+          status: uploadStepStatus,
+        });
+
+        if (intent === "diagnostics") {
+          progressSteps.push({ id: "diagnostics", label: "Fetch diagnostics", status: "pending" });
+          progressSteps.push({ id: "format", label: "Compose answer", status: "pending" });
+        } else if (intent === "document_summary") {
+          progressSteps.push({ id: "summarize", label: "Summarize documents", status: "pending" });
+          progressSteps.push({ id: "format", label: "Compose answer", status: "pending" });
+        } else {
+          progressSteps.push({ id: "resolve", label: "Resolve products", status: "pending" });
+          progressSteps.push({ id: "best_price", label: "Fetch best offers", status: "pending" });
+          progressSteps.push({ id: "format", label: "Compose answer", status: "pending" });
+        }
+
+        const progressText =
+          intent === "diagnostics"
+            ? "Checking diagnostics…"
+            : intent === "document_summary"
+            ? "Summarizing documents…"
+            : "Preparing tools…";
+
         const progressMessage = {
           id: progressId,
           role: "assistant",
           variant: "progress",
-          text: "Preparing tools…",
-          steps: [
-            { id: "upload", label: "Upload attachments", status: attachments.length ? "pending" : "done" },
-            { id: "resolve", label: "Resolve products", status: "pending" },
-            { id: "best_price", label: "Fetch best offers", status: "pending" },
-            { id: "format", label: "Compose answer", status: "pending" },
-          ],
+          text: progressText,
+          steps: progressSteps,
           documents: [],
           timestamp: new Date().toISOString(),
         };
         setMessages((prev) => [...prev, progressMessage]);
 
+        const hasStep = (stepId) => progressSteps.some((step) => step.id === stepId);
+
         let vendorId = null;
         let vendorName = null;
 
         try {
-          if (attachments.length) {
-            const docIds = await uploadFiles(attachments, uploadVendor.trim(), progressId);
+          if (shouldUploadAttachments) {
+            const docIds = await uploadFiles(attachments, uploadVendor.trim(), progressId, preferLLM);
             resolvedDocuments = await pollDocuments(docIds, progressId);
+            shouldResetUploads = true;
           }
 
-          updateProgress(progressId, "resolve", "active", "Resolving product matches…");
+          if (intent === "diagnostics") {
+            if (!config.diagnostics) {
+              throw new Error("Diagnostics endpoint not configured");
+            }
+            if (hasStep("diagnostics")) {
+              updateProgress(progressId, "diagnostics", "active", "Fetching diagnostics…");
+            }
+            const response = await fetch(config.diagnostics);
+            if (!response.ok) {
+              throw new Error(`Diagnostics failed (${response.status})`);
+            }
+            const payload = await response.json();
+            if (hasStep("diagnostics")) {
+              updateProgress(progressId, "diagnostics", "done", "Diagnostics fetched.");
+            }
+            if (hasStep("format")) {
+              updateProgress(progressId, "format", "active", "Formatting answer…");
+            }
+            const countsRaw = payload.counts || payload.db_counts || {};
+            const normalizedCounts = {
+              vendors: countsRaw.vendors ?? countsRaw.vendor_count ?? 0,
+              products: countsRaw.products ?? countsRaw.product_count ?? 0,
+              offers: countsRaw.offers ?? countsRaw.offer_count ?? 0,
+              documents: countsRaw.documents ?? countsRaw.document_count ?? 0,
+            };
+            const statusText =
+              (payload.health && (payload.health.status || payload.health.state || payload.health.detail)) ||
+              payload.health_status ||
+              payload.status ||
+              null;
+            const envLabel =
+              (payload.metadata && payload.metadata.environment) ||
+              (payload.feature_flags && payload.feature_flags.environment) ||
+              environment ||
+              null;
+            const summaryParts = [];
+            if (statusText) {
+              const normalizedStatus =
+                typeof statusText === "string" && statusText.toLowerCase() === "ok"
+                  ? "OK"
+                  : String(statusText);
+              summaryParts.push(`Backend status: ${normalizedStatus}`);
+            }
+            const countSummary = Object.entries(normalizedCounts)
+              .filter(([, value]) => value != null)
+              .map(([key, value]) => `${key}: ${value}`);
+            if (countSummary.length) {
+              summaryParts.push(countSummary.join(" • "));
+            }
+            if (envLabel) {
+              summaryParts.push(`Environment: ${envLabel}`);
+            }
+            if (devMode && config.diagnostics_download) {
+              summaryParts.push("Use the Download diagnostics button for the full JSON report.");
+            }
+            const diagnosticsMessage = {
+              id: uid("diagnostics"),
+              role: "assistant",
+              variant: "diagnostics",
+              timestamp: new Date().toISOString(),
+              summary: summaryParts.length ? summaryParts.join(". ") : "Diagnostics retrieved.",
+              health: payload.health || null,
+              metadata: payload.metadata || payload.service || {},
+              db_counts: normalizedCounts,
+              feature_flags: payload.feature_flags || payload.flags || {},
+              recent_documents:
+                payload.recent_documents || payload.last_documents || payload.documents || [],
+              recent_offers:
+                payload.recent_offers || payload.last_offers || payload.offers || [],
+              ingestion_warnings: payload.ingestion_warnings || [],
+            };
+            setMessages((prev) => [...prev, diagnosticsMessage]);
+            if (hasStep("format")) {
+              updateProgress(progressId, "format", "done", "Answer ready.");
+            }
+            succeeded = true;
+            return;
+          }
+
+          if (intent === "document_summary") {
+            if (hasStep("summarize")) {
+              updateProgress(progressId, "summarize", "active", "Summarizing documents…");
+            }
+            if (!resolvedDocuments.length) {
+              if (hasStep("summarize")) {
+                updateProgress(progressId, "summarize", "done", "Documents still processing.");
+              }
+              if (hasStep("format")) {
+                updateProgress(progressId, "format", "active", "Formatting answer…");
+              }
+              const summaryMessage = {
+                id: uid("doc-summary"),
+                role: "assistant",
+                variant: "document_summary",
+                timestamp: new Date().toISOString(),
+                summary: "Uploads received. Waiting for processing — try again in a minute.",
+                entries: [],
+                documents: resolvedDocuments.map((doc) => ({
+                  id: doc.id,
+                  file_name: doc.file_name,
+                  status: doc.status,
+                })),
+              };
+              setMessages((prev) => [...prev, summaryMessage]);
+              if (hasStep("format")) {
+                updateProgress(progressId, "format", "done", "Answer ready.");
+              }
+              succeeded = true;
+              return;
+            }
+
+            const detailPayloads = await Promise.all(
+              resolvedDocuments.map(async (doc) => {
+                const response = await fetch(`${config.document}/${doc.id}`);
+                if (!response.ok) {
+                  throw new Error(`Failed to load document ${doc.file_name || doc.id}`);
+                }
+                return response.json();
+              })
+            );
+
+            if (hasStep("summarize")) {
+              updateProgress(progressId, "summarize", "done", "Documents summarized.");
+            }
+            if (hasStep("format")) {
+              updateProgress(progressId, "format", "active", "Formatting answer…");
+            }
+
+            const entries = detailPayloads.map((doc) => ({
+              id: doc.id,
+              file_name: doc.file_name,
+              status: doc.status,
+              offers: Array.isArray(doc.offers)
+                ? doc.offers.map((offer) => ({
+                    id: offer.id,
+                    product_name: offer.product_name,
+                    price: offer.price,
+                    currency: offer.currency,
+                    quantity: offer.quantity,
+                    condition: offer.condition,
+                    location: offer.location,
+                  }))
+                : [],
+            }));
+
+            const totalOffers = entries.reduce((sum, entry) => sum + entry.offers.length, 0);
+            const summary =
+              totalOffers > 0
+                ? `Found ${totalOffers} offer${totalOffers === 1 ? "" : "s"} across ${
+                    entries.length
+                  } document${entries.length === 1 ? "" : "s"}.`
+                : "Documents processed, but no offers were captured.";
+
+            const summaryMessage = {
+              id: uid("doc-summary"),
+              role: "assistant",
+              variant: "document_summary",
+              timestamp: new Date().toISOString(),
+              summary,
+              entries,
+              documents: resolvedDocuments.map((doc) => ({
+                id: doc.id,
+                file_name: doc.file_name,
+                status: doc.status,
+              })),
+            };
+            setMessages((prev) => [...prev, summaryMessage]);
+            if (hasStep("format")) {
+              updateProgress(progressId, "format", "done", "Answer ready.");
+            }
+            succeeded = true;
+            return;
+          }
+
+          if (hasStep("resolve")) {
+            updateProgress(progressId, "resolve", "active", "Resolving product matches…");
+          }
           const resolveResponse = await fetch(config.resolve, {
             method: "POST",
             headers: { "Content-Type": "application/json" },
@@ -1057,7 +1445,9 @@
             throw new Error("Product resolver failed");
           }
           const resolvePayload = await resolveResponse.json();
-          updateProgress(progressId, "resolve", "done", "Products resolved.");
+          if (hasStep("resolve")) {
+            updateProgress(progressId, "resolve", "done", "Products resolved.");
+          }
 
           const handleVendor = extractVendorHandle(trimmed);
           if (handleVendor) {
@@ -1068,7 +1458,9 @@
             vendorId = await resolveVendorId(uploadVendor.trim());
           }
 
-          updateProgress(progressId, "best_price", "active", "Fetching best offers…");
+          if (hasStep("best_price")) {
+            updateProgress(progressId, "best_price", "active", "Fetching best offers…");
+          }
           const filters = {
             vendor_id: vendorId,
             condition: null,
@@ -1088,8 +1480,12 @@
             throw new Error(`Best price search failed (${bestPriceResponse.status})`);
           }
           const bestPayload = await bestPriceResponse.json();
-          updateProgress(progressId, "best_price", "done", "Offers retrieved.");
-          updateProgress(progressId, "format", "active", "Formatting answer…");
+          if (hasStep("best_price")) {
+            updateProgress(progressId, "best_price", "done", "Offers retrieved.");
+          }
+          if (hasStep("format")) {
+            updateProgress(progressId, "format", "active", "Formatting answer…");
+          }
 
           const displayFilters = {};
           if (vendorName) {
@@ -1104,6 +1500,21 @@
             if (captured_since) displayFilters.captured_since = captured_since;
           }
 
+          const resultCount = Array.isArray(bestPayload.results) ? bestPayload.results.length : 0;
+          const hasUploads = resolvedDocuments.length > 0;
+          const recentProducts = hasUploads ? [] : (bestPayload.recent_products || []);
+
+          let summaryText;
+          if (resultCount) {
+            summaryText = `Found ${resultCount} product match${resultCount === 1 ? "" : "es"}.`;
+          } else if (hasUploads) {
+            summaryText = "No active offers matched. Try the document summary option to review your latest upload.";
+          } else if (recentProducts.length) {
+            summaryText = "No active offers matched. Recently ingested products you can explore:";
+          } else {
+            summaryText = "No active offers matched. Upload a fresh sheet or adjust filters.";
+          }
+
           const answerMessage = {
             id: uid("answer"),
             role: "assistant",
@@ -1116,13 +1527,15 @@
               status: doc.status,
             })),
             timestamp: new Date().toISOString(),
-            summary: bestPayload.results && bestPayload.results.length
-              ? `Found ${bestPayload.results.length} product match${bestPayload.results.length === 1 ? "" : "es"}.`
-              : "No active offers matched. Upload a fresh sheet or adjust filters.",
+            summary: summaryText,
+            recentProducts,
           };
-          updateProgress(progressId, "format", "done", "Answer ready.");
+          if (hasStep("format")) {
+            updateProgress(progressId, "format", "done", "Answer ready.");
+          }
           setMessages((prev) => [...prev, answerMessage]);
           succeeded = true;
+          shouldResetUploads = shouldUploadAttachments;
         } catch (error) {
           console.error(error);
           setMessages((prev) =>
@@ -1140,7 +1553,7 @@
           );
         } finally {
           setIsSending(false);
-          if (succeeded) {
+          if (succeeded && shouldResetUploads) {
             setAttachments((prev) => {
               prev.forEach((att) => att.preview && URL.revokeObjectURL(att.preview));
               return [];
@@ -1176,15 +1589,29 @@
         dropRef.current && dropRef.current.classList.remove("drop-target");
       }
 
-    const quickActions = useMemo(
-      () => [
+    const quickActions = useMemo(() => {
+      const actions = [
         { label: "Find best price", type: "prompt", text: "Find best price for iPhone 15 Pro in Miami" },
         { label: "Upload price sheet", type: "prompt", text: "@TechSupplier Uploading SB Technology Pricelist Oct" },
         { label: "Check Samsung foldables", type: "prompt", text: "Show Samsung Galaxy Z Fold 6 offers" },
         { label: "Download template", type: "link", href: config.template_download },
-      ],
-      [config.template_download]
-    );
+      ];
+      if (devMode && config.diagnostics_download) {
+        actions.push({ label: "Download diagnostics", type: "link", href: config.diagnostics_download });
+      }
+      return actions;
+    }, [config.template_download, config.diagnostics_download, devMode]);
+
+    const environmentLabel = useMemo(() => {
+      if (!environment) {
+        return "Live data";
+      }
+      const normalized = String(environment).toLowerCase();
+      if (normalized === "production" || normalized === "prod") {
+        return "Live data";
+      }
+      return `${environment} mode`;
+    }, [environment]);
 
       return React.createElement(
         "div",
@@ -1228,7 +1655,7 @@
             React.createElement(
               "span",
               { className: "status-pill" },
-              "Live data"
+              environmentLabel
             )
           )
         ),
@@ -1253,6 +1680,12 @@
             }
             if (message.variant === "answer") {
               return React.createElement(AnswerMessage, { key: message.id, message });
+            }
+            if (message.variant === "document_summary") {
+              return React.createElement(DocumentSummaryMessage, { key: message.id, message });
+            }
+            if (message.variant === "diagnostics") {
+              return React.createElement(DiagnosticsMessage, { key: message.id, message });
             }
             return React.createElement(TextMessage, { key: message.id, message });
           })
@@ -1328,6 +1761,20 @@
               "Attach files"
             ),
             React.createElement(
+              "label",
+              {
+                className: "control-ghost toggle-control",
+                title: "When enabled, spreadsheet uploads will use the AI fallback parser.",
+              },
+              React.createElement("input", {
+                type: "checkbox",
+                checked: preferLLM,
+                onChange: (event) => setPreferLLM(event.target.checked),
+                disabled: isSending,
+              }),
+              "Use AI normalization"
+            ),
+            React.createElement(
               "button",
               {
                 type: "button",
@@ -1347,9 +1794,255 @@
       );
     }
 
+    function DocumentSummaryMessage({ message }) {
+      const chipSection =
+        message.documents && message.documents.length
+          ? React.createElement(
+              "div",
+              { className: "bundle-footer" },
+              message.documents.map((doc) =>
+                React.createElement(
+                  "span",
+                  { key: doc.id, className: "doc-chip" },
+                  `${doc.file_name} • ${doc.status}`
+                )
+              )
+            )
+          : null;
+
+      const entriesContent =
+        message.entries && message.entries.length
+          ? message.entries.map((entry) =>
+              React.createElement(
+                "div",
+                { key: entry.id, className: "doc-summary" },
+                React.createElement(
+                  "div",
+                  { className: "doc-summary-header" },
+                  React.createElement("strong", null, entry.file_name || "Uploaded document"),
+                  entry.status
+                    ? React.createElement("span", null, `Status: ${entry.status}`)
+                    : null
+                ),
+                entry.offers && entry.offers.length
+                  ? React.createElement(
+                      "ul",
+                      { className: "doc-summary-list" },
+                      entry.offers.map((offer, index) => {
+                        const key = offer.id || `${entry.id}-${index}`;
+                        const parts = [];
+                        if (offer.price != null) {
+                          parts.push(formatCurrency(offer.price, offer.currency));
+                        } else if (offer.currency) {
+                          parts.push(offer.currency);
+                        }
+                        if (offer.quantity != null) {
+                          parts.push(`Qty ${offer.quantity}`);
+                        }
+                        if (offer.condition) {
+                          parts.push(offer.condition);
+                        }
+                        if (offer.location) {
+                          parts.push(offer.location);
+                        }
+                        const details = parts.length ? ` — ${parts.join(" • ")}` : "";
+                        return React.createElement(
+                          "li",
+                          { key },
+                          `${offer.product_name || "Unknown product"}${details}`
+                        );
+                      })
+                    )
+                  : React.createElement(
+                      "p",
+                      { className: "doc-summary-empty" },
+                      entry.status === "processing"
+                        ? "Still processing — try again in a moment."
+                        : "No offers captured yet."
+                    )
+              )
+            )
+          : React.createElement(
+              "p",
+              { className: "doc-summary-empty" },
+              "Waiting on document processing — you can retry shortly."
+            );
+
+      return React.createElement(
+        "div",
+        { className: "message-bubble" },
+        React.createElement(
+          "div",
+          { className: "message-metadata" },
+          React.createElement("span", { className: "inline-badge" }, "Pricebot"),
+          React.createElement("span", null, formatDate(message.timestamp))
+        ),
+        React.createElement(
+          "div",
+          { style: { display: "grid", gap: "12px" } },
+          message.summary ? React.createElement("p", null, message.summary) : null,
+          entriesContent,
+          chipSection
+        )
+      );
+    }
+
+    function DiagnosticsMessage({ message }) {
+      const countsEntries = Object.entries(message.db_counts || {});
+      const metadataEntries = Object.entries(message.metadata || {});
+      const flagEntries = Object.entries(message.feature_flags || {});
+      const recentDocuments = (message.recent_documents || []).slice(0, 5);
+      const recentOffers = (message.recent_offers || []).slice(0, 5);
+      const ingestionWarnings = message.ingestion_warnings || [];
+
+      const formatValue = (value) => {
+        if (value == null) return "—";
+        if (typeof value === "object") {
+          try {
+            return JSON.stringify(value);
+          } catch (_err) {
+            return String(value);
+          }
+        }
+        return String(value);
+      };
+
+      return React.createElement(
+        "div",
+        { className: "message-bubble" },
+        React.createElement(
+          "div",
+          { className: "message-metadata" },
+          React.createElement("span", { className: "inline-badge" }, "Pricebot"),
+          React.createElement("span", null, formatDate(message.timestamp))
+        ),
+        React.createElement(
+          "div",
+          { style: { display: "grid", gap: "12px" } },
+          message.summary ? React.createElement("p", null, message.summary) : null,
+          countsEntries.length
+            ? React.createElement(
+                "div",
+                { className: "diagnostics-section" },
+                React.createElement("h3", null, "Database counts"),
+                React.createElement(
+                  "div",
+                  { className: "diagnostics-list" },
+                  countsEntries.map(([key, value]) =>
+                    React.createElement(
+                      "span",
+                      { key, className: "inline-badge" },
+                      `${key}: ${value}`
+                    )
+                  )
+                )
+              )
+            : null,
+          metadataEntries.length
+            ? React.createElement(
+                "div",
+                { className: "diagnostics-section" },
+                React.createElement("h3", null, "Service metadata"),
+                React.createElement(
+                  "div",
+                  { className: "diagnostics-inline" },
+                  metadataEntries.map(([key, value]) =>
+                    React.createElement("span", { key }, `${key}: ${formatValue(value)}`)
+                  )
+                )
+              )
+            : null,
+          flagEntries.length
+            ? React.createElement(
+                "div",
+                { className: "diagnostics-section" },
+                React.createElement("h3", null, "Feature flags"),
+                React.createElement(
+                  "div",
+                  { className: "diagnostics-inline" },
+                  flagEntries.map(([key, value]) =>
+                    React.createElement(
+                      "span",
+                      { key },
+                      `${key}: ${formatValue(value)}`
+                    )
+                  )
+                )
+              )
+            : null,
+          recentDocuments.length
+            ? React.createElement(
+                "div",
+                { className: "diagnostics-section" },
+                React.createElement("h3", null, "Recent documents"),
+                React.createElement(
+                  "div",
+                  { className: "diagnostics-inline" },
+                  recentDocuments.map((doc) => {
+                    const parts = [
+                      doc.file_name || doc.id || "Document",
+                      doc.status ? `status: ${doc.status}` : null,
+                      doc.offers_count != null ? `offers: ${doc.offers_count}` : null,
+                    ].filter(Boolean);
+                    return React.createElement("span", { key: doc.id || doc.file_name }, parts.join(" • "));
+                  })
+                )
+              )
+            : null,
+          recentOffers.length
+            ? React.createElement(
+                "div",
+                { className: "diagnostics-section" },
+                React.createElement("h3", null, "Recent offers"),
+                React.createElement(
+                  "div",
+                  { className: "diagnostics-inline" },
+                  recentOffers.map((offer, index) => {
+                    const key = offer.id || `${offer.vendor || "vendor"}-${index}`;
+                    const parts = [
+                      offer.product || offer.product_name || "Product",
+                      offer.vendor || offer.vendor_name ? `vendor: ${offer.vendor || offer.vendor_name}` : null,
+                      offer.price != null
+                        ? `price: ${formatCurrency(offer.price, offer.currency)}`
+                        : offer.currency
+                        ? `currency: ${offer.currency}`
+                        : null,
+                      offer.captured_at ? `captured ${relativeTime(offer.captured_at)}` : null,
+                    ].filter(Boolean);
+                    return React.createElement("span", { key }, parts.join(" • "));
+                  })
+                )
+              )
+            : null,
+          ingestionWarnings.length
+            ? React.createElement(
+                "div",
+                { className: "diagnostics-section" },
+                React.createElement("h3", null, "Ingestion warnings"),
+                React.createElement(
+                  "div",
+                  { className: "diagnostics-inline" },
+                  ingestionWarnings.map((warning) => {
+                    const messages = Array.isArray(warning.messages)
+                      ? warning.messages.join(" | ")
+                      : String(warning.messages || "");
+                    const label = warning.file_name || warning.document_id || "Document";
+                    return React.createElement(
+                      "span",
+                      { key: warning.document_id || label },
+                      `${label}: ${messages}`
+                    );
+                  })
+                )
+              )
+            : null
+        )
+      );
+    }
+
     const root = document.getElementById("chat-root");
     if (root) {
-      const app = React.createElement(ChatApp, { config });
+      const app = React.createElement(ChatApp, { config, devMode, environment });
       ReactDOM.createRoot(root).render(app);
     }
   })();

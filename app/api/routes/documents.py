@@ -3,12 +3,14 @@ import logging
 import re
 import tempfile
 from datetime import datetime, timezone
+from io import BytesIO
 from pathlib import Path
-from typing import Annotated, Optional
+from typing import Annotated, Any, Optional
 from uuid import UUID, uuid4
 
 from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, UploadFile
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, Response
+import pandas as pd
 from pydantic import BaseModel
 from sqlalchemy import delete
 from sqlalchemy.exc import IntegrityError, SQLAlchemyError
@@ -26,6 +28,55 @@ TEMPLATE_PATH = BASE_DIR / "storage" / "templates" / "vendor_price_template.xlsx
 
 router = APIRouter(prefix="/documents", tags=["documents"])
 logger = logging.getLogger(__name__)
+
+
+def _build_vendor_template_bytes() -> bytes:
+    """Return an in-memory Excel workbook with the canonical vendor template columns."""
+
+    columns = ["Item", "Price", "Qty", "Condition", "Location", "Notes"]
+    frame = pd.DataFrame(columns=columns)
+    buffer = BytesIO()
+    frame.to_excel(buffer, index=False)
+    buffer.seek(0)
+    return buffer.getvalue()
+
+
+
+def _build_ingestion_context(
+    processor_name: str,
+    vendor_name: str,
+    prefer_llm: Optional[bool] = None,
+) -> dict[str, Any]:
+    """Prepare processor-specific context hints for ingestion."""
+
+    context: dict[str, Any] = {"vendor_name": vendor_name}
+
+    if processor_name == "whatsapp_text":
+        context.update(
+            {
+                "prefer_llm": True,
+                "llm_instructions": (
+                    "Treat this as a WhatsApp business chat. Extract only concrete product offers with "
+                    "explicit prices, quantities, or deal terms. Ignore greetings, transfers, or discussion."
+                ),
+            }
+        )
+    elif processor_name == "document_text":
+        context.update(
+            {
+                "prefer_llm": True,
+                "llm_instructions": (
+                    "Treat the content as a vendor price sheet. Capture product names, variants, quantities, "
+                    "and unit prices from each listed item, ignoring marketing copy or logistics notes."
+                ),
+            }
+        )
+
+    if prefer_llm:
+        context["prefer_llm"] = True
+
+    return context
+
 
 
 def _utc_now() -> datetime:
@@ -80,13 +131,25 @@ def _ensure_storage_directory(storage_dir: Path) -> Path:
 
 
 @router.get("/templates/vendor-price", include_in_schema=False)
-def download_vendor_template() -> FileResponse:
-    if not TEMPLATE_PATH.exists():
-        raise HTTPException(status_code=404, detail="Vendor template not found")
-    return FileResponse(
-        TEMPLATE_PATH,
+def download_vendor_template() -> Response:
+    if TEMPLATE_PATH.exists():
+        return FileResponse(
+            TEMPLATE_PATH,
+            media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            filename="vendor_price_template.xlsx",
+        )
+
+    logger.warning("Vendor template missing at %s; generating fallback workbook.", TEMPLATE_PATH)
+    try:
+        content = _build_vendor_template_bytes()
+    except Exception as exc:  # pragma: no cover - defensive
+        logger.exception("Failed to generate vendor template workbook: %s", exc)
+        raise HTTPException(status_code=500, detail="Unable to generate vendor template") from exc
+
+    return Response(
+        content=content,
         media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-        filename="vendor_price_template.xlsx",
+        headers={"Content-Disposition": 'attachment; filename="vendor_price_template.xlsx"'},
     )
 
 
@@ -144,6 +207,7 @@ def _run_ingestion(
     processor_name: str,
     vendor_name: str,
     file_path: Path,
+    prefer_llm: Optional[bool] = None,
     clear_existing: bool = False,
 ) -> DocumentIngestResponse:
     try:
@@ -169,7 +233,8 @@ def _run_ingestion(
     session.flush()
 
     try:
-        result = processor_instance.process(file_path, context={"vendor_name": vendor_name})
+        context = _build_ingestion_context(processor_name, vendor_name, prefer_llm)
+        result = processor_instance.process(file_path, context=context)
 
         offer_service = OfferIngestionService(session)
         persisted = offer_service.ingest(
@@ -236,6 +301,7 @@ async def _process_single_upload(
     processor_override: Optional[str],
     session: Session,
     storage_root: Path,
+    prefer_llm: Optional[bool],
 ) -> dict:
     original_name = Path(upload_file.filename or "uploaded_file").name
     file_ext = Path(original_name).suffix.lower()
@@ -268,6 +334,8 @@ async def _process_single_upload(
         "declared_vendor": vendor_name,
         "file_size": len(content),
     }
+    if prefer_llm is not None:
+        metadata_extra["prefer_llm"] = bool(prefer_llm)
 
     source_doc = models.SourceDocument(
         file_name=original_name,
@@ -304,6 +372,7 @@ async def _process_single_upload(
         processor_name=processor_name,
         vendor_name=vendor_name,
         file_path=file_path,
+        prefer_llm=prefer_llm,
         clear_existing=False,
     )
 
@@ -317,6 +386,7 @@ async def upload_document(
     file: UploadFile | None = File(default=None),
     vendor_name: str = Form(...),
     processor: Optional[str] = Form(None),
+    prefer_llm: Optional[bool] = Form(None),
     session: Session = Depends(get_db),
 ) -> dict:
     """
@@ -325,6 +395,7 @@ async def upload_document(
     - **file/files**: Document(s) to upload
     - **vendor_name**: Name of the vendor (e.g., "Abdursajid", "SB Technology")
     - **processor**: Optional processor type override (spreadsheet, document_text, whatsapp_text)
+    - **prefer_llm**: Optional flag to request AI-assisted normalization for supported processors
     """
 
     uploads: list[UploadFile] = []
@@ -342,10 +413,11 @@ async def upload_document(
 
     for upload in uploads:
         logger.info(
-            "Upload request received: filename=%s vendor=%s processor=%s",
+            "Upload request received: filename=%s vendor=%s processor=%s prefer_llm=%s",
             upload.filename,
             vendor_name,
             processor or "auto",
+            bool(prefer_llm),
         )
 
         try:
@@ -355,6 +427,7 @@ async def upload_document(
                 processor_override=processor,
                 session=session,
                 storage_root=storage_root,
+                prefer_llm=prefer_llm,
             )
             results.append(result)
         except HTTPException as exc:
@@ -616,5 +689,3 @@ def ingest_document(
         file_path=file_path,
         clear_existing=should_clear,
     )
-
-

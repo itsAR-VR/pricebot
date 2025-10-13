@@ -198,7 +198,7 @@ def extract_offers_from_lines(
             line,
             vendor_name=vendor_name,
             default_currency=default_currency or settings.default_currency,
-            raw_payload={"line_number": idx},
+            raw_payload={"line_number": idx, "raw_lines": [idx]},
         )
         if offer:
             offers.append(offer)

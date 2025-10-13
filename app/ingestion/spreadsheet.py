@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import logging
 from math import isinf, isnan
 from pathlib import Path
 from typing import Any
@@ -9,19 +10,37 @@ import pandas as pd
 from app.core.config import settings
 from app.ingestion.base import BaseIngestionProcessor, registry
 from app.ingestion.types import IngestionResult, RawOffer
+from app.services.llm_extraction import (
+    ExtractionContext,
+    LLMUnavailableError,
+    OfferLLMExtractor,
+)
+
+logger = logging.getLogger(__name__)
 
 
 class SpreadsheetIngestionProcessor(BaseIngestionProcessor):
     name = "spreadsheet"
     supported_suffixes = (".xlsx", ".xls", ".csv")
 
-    DESCRIPTION_KEYS = {
-        "description",
+    TITLE_KEYS = {
         "item",
         "product",
         "model",
         "device",
         "name",
+        "title",
+    }
+    DETAIL_KEYS = {
+        "description",
+        "details",
+        "notes",
+        "spec",
+        "specs",
+        "comment",
+        "comments",
+        "features",
+        "feature",
     }
     PRICE_KEYS = {
         "price",
@@ -56,6 +75,22 @@ class SpreadsheetIngestionProcessor(BaseIngestionProcessor):
     CONDITION_KEYS = {"condition", "grade"}
     LOCATION_KEYS = {"warehouse", "location", "city", "hub", "region"}
 
+    DESCRIPTION_KEYS = TITLE_KEYS | DETAIL_KEYS
+    PLACEHOLDER_STRINGS = {
+        "n/a",
+        "na",
+        "none",
+        "null",
+        "no data",
+        "nodata",
+        "not available",
+        "tbd",
+        "pending",
+        "unknown",
+        "-",
+        "--",
+    }
+
     HEADER_MATCH_THRESHOLD = 2
     HEADER_KEYS = (
         DESCRIPTION_KEYS
@@ -66,6 +101,9 @@ class SpreadsheetIngestionProcessor(BaseIngestionProcessor):
         | CONDITION_KEYS
         | LOCATION_KEYS
     )
+
+    def __init__(self, llm_extractor: OfferLLMExtractor | None = None) -> None:
+        self._llm_extractor = llm_extractor
 
     def process(self, file_path: Path, *, context: dict[str, Any] | None = None) -> IngestionResult:
         context = context or {}
@@ -80,23 +118,28 @@ class SpreadsheetIngestionProcessor(BaseIngestionProcessor):
         offers: list[RawOffer] = []
         errors: list[str] = []
 
-        for row_idx, row in enumerate(df.to_dict(orient="records")):
+        records = df.to_dict(orient="records")
+        formatted_for_llm = self._format_rows_for_llm(records, df.columns)
+
+        for row_idx, row in enumerate(records):
             normalized = {self._normalize_key(k): v for k, v in row.items()}
 
             price = self._extract_price(normalized)
-            description = self._extract_description(normalized)
+            product_name = self._extract_description(normalized)
 
-            if price is None or description is None:
+            if price is None or product_name is None:
                 if self._looks_like_header_row(normalized):
                     continue
                 errors.append(
-                    f"row {row_idx + 1}: missing critical fields (price={price}, description={description})"
+                    f"row {row_idx + 1}: missing critical fields (price={price}, product_name={product_name})"
                 )
                 continue
 
+            notes = self._extract_notes(normalized, product_name)
+
             offer = RawOffer(
                 vendor_name=vendor_name,
-                product_name=description,
+                product_name=product_name,
                 price=price,
                 currency=currency,
                 quantity=self._extract_int(normalized, self.QUANTITY_KEYS),
@@ -105,14 +148,58 @@ class SpreadsheetIngestionProcessor(BaseIngestionProcessor):
                 model_number=self._extract_str(normalized, self.SKU_KEYS),
                 upc=self._extract_str(normalized, self.UPC_KEYS),
                 warehouse=self._extract_str(normalized, self.LOCATION_KEYS),
-                raw_payload={k: v for k, v in normalized.items() if not self._is_missing(v)},
+                notes=notes,
+                raw_payload=self._build_raw_payload(row_idx, normalized),
             )
             offers.append(offer)
 
         if not offers and not errors:
             errors.append("no offers extracted from spreadsheet")
+        prefer_llm = bool(context.get("prefer_llm"))
+        use_llm = (prefer_llm or not offers) and bool(formatted_for_llm)
+        llm_errors: list[str] = []
 
-        return IngestionResult(offers=offers, errors=errors)
+        if use_llm:
+            llm = self._resolve_llm_extractor(context)
+            if llm is not None:
+                try:
+                    base_instructions = (
+                        "Rows describe vendor offers in a spreadsheet. Extract real sale items with prices. "
+                        "Ignore header, subtotal, and summary rows. Use quantity, SKU, and description columns when present."
+                    )
+                    custom_prompt = context.get("llm_instructions")
+                    extra_instructions = (
+                        f"{base_instructions} {custom_prompt}".strip() if custom_prompt else base_instructions
+                    )
+
+                    llm_offers, warnings = llm.extract_offers_from_lines(
+                        formatted_for_llm,
+                        context=ExtractionContext(
+                            vendor_hint=vendor_name,
+                            currency_hint=currency,
+                            document_name=file_path.name,
+                            document_kind="spreadsheet",
+                            extra_instructions=extra_instructions,
+                        ),
+                    )
+                except LLMUnavailableError as exc:
+                    logger.warning("LLM normalization unavailable for spreadsheet ingestion: %s", exc)
+                    llm_errors.append(str(exc))
+                else:
+                    if llm_offers:
+                        logger.info(
+                            "LLM normalization: processor=spreadsheet model=%s offers=%d prefer_llm=%s",
+                            getattr(llm, "model", "unknown"),
+                            len(llm_offers),
+                            prefer_llm,
+                        )
+                        merged_offers = self._merge_llm_offers(llm_offers, offers)
+                        combined_errors = errors + warnings
+                        return IngestionResult(offers=merged_offers, errors=combined_errors)
+                    logger.warning("LLM normalization returned no spreadsheet offers; using heuristics instead")
+                    llm_errors.extend(warnings)
+
+        return IngestionResult(offers=offers, errors=errors + llm_errors)
 
     def _load_dataframe(self, file_path: Path) -> pd.DataFrame:
         suffix = file_path.suffix.lower()
@@ -209,13 +296,37 @@ class SpreadsheetIngestionProcessor(BaseIngestionProcessor):
 
     def _extract_description(self, row: dict[str, Any]) -> str | None:
         for key, value in row.items():
-            if key in self.DESCRIPTION_KEYS or any(token in key for token in self.DESCRIPTION_KEYS):
+            if key in self.TITLE_KEYS or any(token in key for token in self.TITLE_KEYS):
                 if not self._is_missing(value):
-                    return str(value)
+                    return str(value).strip()
+        for key, value in row.items():
+            if key in self.DETAIL_KEYS or any(token in key for token in self.DETAIL_KEYS):
+                if not self._is_missing(value):
+                    return str(value).strip()
         for key, value in row.items():
             if not self._is_missing(value):
-                return str(value)
+                return str(value).strip()
         return None
+
+    def _extract_notes(self, row: dict[str, Any], product_name: str | None) -> str | None:
+        if not row:
+            return None
+        details: list[str] = []
+        normalized_product = product_name.strip().lower() if isinstance(product_name, str) else None
+
+        for key, value in row.items():
+            if key in self.DETAIL_KEYS or any(token in key for token in self.DETAIL_KEYS):
+                if self._is_missing(value):
+                    continue
+                text = str(value).strip()
+                if not text:
+                    continue
+                if normalized_product and text.lower().strip() == normalized_product:
+                    continue
+                if text not in details:
+                    details.append(text)
+
+        return "\n".join(details) if details else None
 
     def _extract_int(self, row: dict[str, Any], keys: set[str]) -> int | None:
         for key in row:
@@ -272,18 +383,88 @@ class SpreadsheetIngestionProcessor(BaseIngestionProcessor):
     def _vendor_from_path(file_path: Path) -> str:
         return file_path.stem.replace("_", " ")
 
-    @staticmethod
-    def _is_missing(value: Any) -> bool:
+    @classmethod
+    def _is_missing(cls, value: Any) -> bool:
         if value is None:
             return True
-        if isinstance(value, str) and value.strip() == "":
-            return True
+        if isinstance(value, str):
+            stripped = value.strip()
+            if stripped == "":
+                return True
+            simplified = "".join(ch if ch.isalnum() else " " for ch in stripped.lower())
+            simplified = " ".join(simplified.split())
+            if simplified in cls.PLACEHOLDER_STRINGS:
+                return True
         if isinstance(value, float) and isnan(value):
             return True
         try:
             return bool(pd.isna(value))
         except TypeError:
             return False
+
+    def _build_raw_payload(self, row_idx: int, normalized: dict[str, Any]) -> dict[str, Any]:
+        payload = {k: v for k, v in normalized.items() if not self._is_missing(v)}
+        payload["row_index"] = row_idx + 1
+        payload["raw_lines"] = [row_idx + 1]
+        payload["source"] = "spreadsheet_heuristic"
+        return payload
+
+    def _format_rows_for_llm(self, records: list[dict[str, Any]], columns: pd.Index) -> list[str]:
+        if not records:
+            return []
+
+        column_aliases = [
+            (col, (str(col).strip() or f"column_{idx}"))
+            for idx, col in enumerate(columns, start=1)
+        ]
+
+        lines: list[str] = []
+        for idx, row in enumerate(records, start=1):
+            parts: list[str] = []
+            for original_name, alias in column_aliases:
+                raw_value = row.get(original_name)
+                if self._is_missing(raw_value):
+                    continue
+                parts.append(f"{alias}: {raw_value}")
+            if not parts:
+                continue
+            lines.append(f"Row {idx}: " + " | ".join(parts))
+        return lines
+
+    def _merge_llm_offers(self, llm_offers: list[RawOffer], heuristic_offers: list[RawOffer]) -> list[RawOffer]:
+        if not heuristic_offers:
+            return llm_offers
+
+        llm_rows: set[int] = set()
+        for offer in llm_offers:
+            raw_payload = offer.raw_payload or {}
+            rows = raw_payload.get("raw_lines")
+            if isinstance(rows, list):
+                for value in rows:
+                    if isinstance(value, int):
+                        llm_rows.add(value)
+
+        remaining = []
+        for offer in heuristic_offers:
+            payload = offer.raw_payload or {}
+            row_index = payload.get("row_index")
+            if isinstance(row_index, int) and row_index in llm_rows:
+                continue
+            remaining.append(offer)
+
+        return llm_offers + remaining
+
+    def _resolve_llm_extractor(self, context: dict[str, Any]) -> OfferLLMExtractor | None:
+        if context.get("disable_llm"):
+            return None
+        if self._llm_extractor is not None:
+            return self._llm_extractor
+        try:
+            self._llm_extractor = OfferLLMExtractor()
+        except LLMUnavailableError as exc:
+            logger.warning("LLM extractor unavailable for spreadsheet ingestion: %s", exc)
+            return None
+        return self._llm_extractor
 
 
 registry.register(SpreadsheetIngestionProcessor())

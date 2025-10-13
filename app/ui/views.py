@@ -13,6 +13,7 @@ from sqlmodel import Session, select
 
 from app.api.deps import get_db
 from app.api.routes.offers import OfferOut
+from app.core.config import settings
 from app.db import models
 
 router = APIRouter(prefix="/admin", tags=["operator"], include_in_schema=False)
@@ -37,6 +38,9 @@ async def upload_page(request: Request) -> HTMLResponse:
 async def chat_page(request: Request) -> HTMLResponse:
     """Render the lightweight chat prototype that calls the new tool endpoints."""
 
+    dev_query = (request.query_params.get("dev") or "").lower()
+    is_dev_mode = dev_query in {"1", "true", "yes"} or settings.environment.lower() not in {"production", "prod"}
+
     context = {
         "request": request,
         "title": "Pricebot Chat",
@@ -47,7 +51,11 @@ async def chat_page(request: Request) -> HTMLResponse:
             "document": "/documents",
             "vendors": "/vendors",
             "template_download": "/documents/templates/vendor-price",
+            "diagnostics": "/chat/tools/diagnostics",
+            "diagnostics_download": "/chat/tools/diagnostics/download",
         },
+        "environment": settings.environment,
+        "dev_mode": is_dev_mode,
     }
     return _templates.TemplateResponse(request, "chat.html", context)
 

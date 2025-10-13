@@ -5,10 +5,15 @@ from typing import Any
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException
+from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field, field_validator, model_validator
-from sqlmodel import Session
+from sqlalchemy import func
+from sqlalchemy.orm import selectinload
+from sqlmodel import Session, select
 
 from app.api.deps import get_db
+from app.api.routes.health import healthcheck as health_status
+from app.core.config import settings
 from app.db import models
 from app.services.chat import ChatLookupService
 
@@ -130,6 +135,14 @@ class BestPriceRequest(BaseModel):
         return normalized
 
 
+class RecentProductSuggestionOut(BaseModel):
+    id: UUID
+    canonical_name: str
+    alias: str | None = None
+    last_seen: datetime | None = None
+    offer_count: int = 0
+
+
 class ProductOfferBundle(BaseModel):
     product: ProductDetail
     best_offer: OfferSummary | None
@@ -144,6 +157,7 @@ class BestPriceResponse(BaseModel):
     has_more: bool
     next_offset: int | None = None
     applied_filters: OfferSearchFilters
+    recent_products: list[RecentProductSuggestionOut] = Field(default_factory=list)
 
 
 def _extract_image_url(spec: dict[str, Any] | None) -> str | None:
@@ -239,6 +253,16 @@ def search_best_price(payload: BestPriceRequest, session: Session = Depends(get_
     )
 
     if not result_page.matches:
+        recent_products = [
+            RecentProductSuggestionOut(
+                id=suggestion.product_id,
+                canonical_name=suggestion.canonical_name,
+                alias=suggestion.alias,
+                last_seen=suggestion.last_seen,
+                offer_count=suggestion.offer_count,
+            )
+            for suggestion in service.fetch_recent_product_summaries(limit=5)
+        ]
         return BestPriceResponse(
             results=[],
             limit=payload.limit,
@@ -247,6 +271,7 @@ def search_best_price(payload: BestPriceRequest, session: Session = Depends(get_
             has_more=False,
             next_offset=None,
             applied_filters=payload.filters,
+            recent_products=recent_products,
         )
 
     product_ids = [match.product.id for match in result_page.matches]
@@ -296,6 +321,179 @@ def search_best_price(payload: BestPriceRequest, session: Session = Depends(get_
         has_more=result_page.has_more,
         next_offset=next_offset,
         applied_filters=payload.filters,
+        recent_products=[],
+    )
+
+
+class DiagnosticsCounts(BaseModel):
+    vendors: int
+    products: int
+    offers: int
+    documents: int
+
+
+class DiagnosticsDocument(BaseModel):
+    id: UUID
+    file_name: str
+    status: str
+    offers_count: int
+    ingest_started_at: datetime | None = None
+    ingest_completed_at: datetime | None = None
+    ingestion_errors: list[str] = Field(default_factory=list)
+
+
+class DiagnosticsOffer(BaseModel):
+    id: UUID
+    product_name: str | None
+    vendor_name: str | None
+    price: float
+    currency: str
+    captured_at: datetime
+    quantity: int | None = None
+    condition: str | None = None
+
+
+class DiagnosticsFeatureFlags(BaseModel):
+    enable_openai: bool
+    default_currency: str
+    environment: str
+
+
+class DiagnosticsIngestionWarning(BaseModel):
+    document_id: UUID
+    file_name: str
+    messages: list[str]
+
+
+class DiagnosticsResponse(BaseModel):
+    metadata: dict[str, str]
+    health: dict[str, Any]
+    counts: DiagnosticsCounts
+    recent_documents: list[DiagnosticsDocument]
+    recent_offers: list[DiagnosticsOffer]
+    feature_flags: DiagnosticsFeatureFlags
+    ingestion_warnings: list[DiagnosticsIngestionWarning]
+
+
+def _coerce_messages(raw: Any) -> list[str]:
+    if raw is None:
+        return []
+    if isinstance(raw, list):
+        return [str(item) for item in raw if item]
+    if isinstance(raw, dict):
+        return [f"{key}: {value}" for key, value in raw.items()]
+    return [str(raw)]
+
+
+def _row_count(session: Session, model: type[Any]) -> int:
+    count_statement = select(func.count()).select_from(model)
+    return int(session.exec(count_statement).one())
+
+
+def _collect_diagnostics(session: Session) -> DiagnosticsResponse:
+    metadata = {"service": settings.app_name, "environment": settings.environment}
+    health = health_status()
+
+    counts = DiagnosticsCounts(
+        vendors=_row_count(session, models.Vendor),
+        products=_row_count(session, models.Product),
+        offers=_row_count(session, models.Offer),
+        documents=_row_count(session, models.SourceDocument),
+    )
+
+    document_order = func.coalesce(
+        models.SourceDocument.ingest_completed_at,
+        models.SourceDocument.ingest_started_at,
+    )
+    document_stmt = (
+        select(models.SourceDocument, func.count(models.Offer.id))
+        .outerjoin(models.Offer, models.Offer.source_document_id == models.SourceDocument.id)
+        .group_by(models.SourceDocument.id)
+        .order_by(document_order.desc(), models.SourceDocument.file_name)
+        .limit(10)
+    )
+    document_rows = session.exec(document_stmt).all()
+
+    recent_documents: list[DiagnosticsDocument] = []
+    ingestion_warnings: list[DiagnosticsIngestionWarning] = []
+    for doc, offer_count in document_rows:
+        ingestion_errors = _coerce_messages(
+            (doc.extra or {}).get("ingestion_errors") if isinstance(doc.extra, dict) else None
+        )
+        recent_documents.append(
+            DiagnosticsDocument(
+                id=doc.id,
+                file_name=doc.file_name,
+                status=doc.status,
+                offers_count=int(offer_count or 0),
+                ingest_started_at=doc.ingest_started_at,
+                ingest_completed_at=doc.ingest_completed_at,
+                ingestion_errors=ingestion_errors,
+            )
+        )
+        if ingestion_errors:
+            ingestion_warnings.append(
+                DiagnosticsIngestionWarning(
+                    document_id=doc.id,
+                    file_name=doc.file_name,
+                    messages=ingestion_errors,
+                )
+            )
+
+    offer_stmt = (
+        select(models.Offer)
+        .options(
+            selectinload(models.Offer.product),
+            selectinload(models.Offer.vendor),
+        )
+        .order_by(models.Offer.captured_at.desc())
+        .limit(10)
+    )
+    offers = session.exec(offer_stmt).all()
+
+    recent_offers = [
+        DiagnosticsOffer(
+            id=offer.id,
+            product_name=offer.product.canonical_name if offer.product else None,
+            vendor_name=offer.vendor.name if offer.vendor else None,
+            price=offer.price,
+            currency=offer.currency,
+            captured_at=offer.captured_at,
+            quantity=offer.quantity,
+            condition=offer.condition,
+        )
+        for offer in offers
+    ]
+
+    feature_flags = DiagnosticsFeatureFlags(
+        enable_openai=settings.enable_openai,
+        default_currency=settings.default_currency,
+        environment=settings.environment,
+    )
+
+    return DiagnosticsResponse(
+        metadata=metadata,
+        health=health,
+        counts=counts,
+        recent_documents=recent_documents,
+        recent_offers=recent_offers,
+        feature_flags=feature_flags,
+        ingestion_warnings=ingestion_warnings,
+    )
+
+
+@router.get("/diagnostics", response_model=DiagnosticsResponse)
+def get_diagnostics(session: Session = Depends(get_db)) -> DiagnosticsResponse:
+    return _collect_diagnostics(session)
+
+
+@router.get("/diagnostics/download", include_in_schema=False)
+def download_diagnostics(session: Session = Depends(get_db)) -> JSONResponse:
+    diagnostics = _collect_diagnostics(session)
+    payload = diagnostics.model_dump(mode="json")
+    return JSONResponse(
+        content=payload,
+        headers={"Content-Disposition": 'attachment; filename="pricebot_diagnostics.json"'},
     )
 
 

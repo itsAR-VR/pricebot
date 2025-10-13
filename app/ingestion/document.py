@@ -56,6 +56,13 @@ class DocumentExtractionProcessor(BaseIngestionProcessor):
         llm = self._resolve_llm_extractor(context)
         if llm is not None:
             try:
+                base_instructions = (
+                    "Treat the extracted text as a vendor price sheet or flyer. Focus on rows that pair product identifiers "
+                    "with explicit pricing. Ignore shipping updates, marketing slogans, or unrelated chatter."
+                )
+                custom_instructions = context.get("llm_instructions") or ""
+                extra_instructions = f"{base_instructions} {custom_instructions}".strip()
+
                 offers, warnings = llm.extract_offers_from_lines(
                     lines,
                     context=ExtractionContext(
@@ -63,14 +70,25 @@ class DocumentExtractionProcessor(BaseIngestionProcessor):
                         currency_hint=default_currency,
                         document_name=file_path.name,
                         document_kind=self._document_kind(file_path),
-                        extra_instructions=context.get("llm_instructions"),
+                        extra_instructions=extra_instructions,
                     ),
                 )
             except LLMUnavailableError as exc:
+                logger.warning("LLM normalization unavailable for document %s: %s", file_path.name, exc)
                 llm_errors.append(str(exc))
             else:
                 if offers:
+                    logger.info(
+                        "LLM normalization: processor=document model=%s offers=%d file=%s",
+                        getattr(llm, "model", "unknown"),
+                        len(offers),
+                        file_path.name,
+                    )
                     return IngestionResult(offers=offers, errors=warnings)
+                logger.warning(
+                    "LLM normalization returned no offers for document %s; falling back to heuristics",
+                    file_path.name,
+                )
                 llm_errors.extend(warnings)
 
         offers, errors = extract_offers_from_lines(
@@ -93,7 +111,7 @@ class DocumentExtractionProcessor(BaseIngestionProcessor):
         try:
             self._llm_extractor = OfferLLMExtractor()
         except LLMUnavailableError as exc:
-            logger.debug("LLM extractor unavailable: %s", exc)
+            logger.warning("LLM extractor unavailable for document ingestion: %s", exc)
             return None
         return self._llm_extractor
 

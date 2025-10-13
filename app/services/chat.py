@@ -32,6 +32,15 @@ class ProductMatchPage:
     has_more: bool
 
 
+@dataclass
+class RecentProductSuggestion:
+    product_id: UUID
+    canonical_name: str
+    alias: str | None
+    last_seen: datetime | None
+    offer_count: int
+
+
 class ChatLookupService:
     """Aggregate product and offer lookups for the chat interface tools."""
 
@@ -178,10 +187,46 @@ class ChatLookupService:
 
         return bundles
 
+    def fetch_recent_product_summaries(self, *, limit: int = 5) -> list[RecentProductSuggestion]:
+        """Return recently ingested products ordered by most recent offer capture."""
+        if limit <= 0:
+            return []
+
+        statement = (
+            select(
+                models.Product.id,
+                models.Product.canonical_name,
+                func.min(models.ProductAlias.alias_text).label("alias_text"),
+                func.max(models.Offer.captured_at).label("last_seen"),
+                func.count(models.Offer.id).label("offer_count"),
+            )
+            .join(models.Offer, models.Offer.product_id == models.Product.id)
+            .outerjoin(models.ProductAlias, models.ProductAlias.product_id == models.Product.id)
+            .group_by(models.Product.id, models.Product.canonical_name)
+            .order_by(func.max(models.Offer.captured_at).desc())
+            .limit(limit)
+        )
+
+        rows = self.session.exec(statement).all()
+        suggestions: list[RecentProductSuggestion] = []
+        for row in rows:
+            product_id, canonical_name, alias_text, last_seen, offer_count = row
+            suggestions.append(
+                RecentProductSuggestion(
+                    product_id=product_id,
+                    canonical_name=canonical_name,
+                    alias=alias_text,
+                    last_seen=last_seen,
+                    offer_count=int(offer_count or 0),
+                )
+            )
+        return suggestions
+
 
 __all__ = [
     "ChatLookupService",
     "ProductMatch",
     "ProductMatchPage",
     "OfferBundle",
+    "RecentProductSuggestion",
 ]
