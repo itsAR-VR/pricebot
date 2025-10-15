@@ -68,6 +68,9 @@ class Settings(BaseSettings):
         or os.getenv("RAILWAY_VOLUME_MOUNT_PATH")
         or "./storage"
     )
+    log_buffer_size: int = 500
+    log_tool_event_size: int = 200
+    log_buffer_file: Path | None = None
 
     enable_openai: bool = False
     openai_api_key: str | None = None
@@ -80,6 +83,13 @@ class Settings(BaseSettings):
         """Ensure SQLAlchemy uses the psycopg v3 driver on postgres URLs."""
 
         return _normalize_database_url(value)
+
+    @field_validator("log_buffer_file", mode="before")
+    @classmethod
+    def _coerce_log_buffer_file(cls, value: str | None) -> Path | None:
+        if value in (None, "", "None"):
+            return None
+        return Path(value)
 
 
 @lru_cache

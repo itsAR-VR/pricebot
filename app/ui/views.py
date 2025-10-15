@@ -47,6 +47,7 @@ async def chat_page(request: Request) -> HTMLResponse:
         "api_config": {
             "resolve": "/chat/tools/products/resolve",
             "best_price": "/chat/tools/offers/search-best-price",
+            "help": "/chat/tools/help",
             "upload": "/documents/upload",
             "document": "/documents",
             "vendors": "/vendors",

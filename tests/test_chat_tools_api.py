@@ -1,11 +1,15 @@
 from datetime import datetime, timedelta, timezone
+import logging
 from uuid import uuid4
 
 from fastapi.testclient import TestClient
 
 from app.api.deps import get_db
 from app.db import models
+from app.core.log_buffer import reset_buffers
+from app.services.help_index import reset_help_index_cache
 from app.main import app
+from app.services.llm_extraction import OfferLLMExtractor
 
 
 def _override_get_db(session):
@@ -103,6 +107,86 @@ def test_resolve_products_returns_matches(session):
     assert payload["products"][0]["match_source"] in {"canonical_name", "alias"}
 
     app.dependency_overrides.pop(get_db, None)
+
+
+def test_logs_endpoint_returns_recent_entries(session):
+    reset_buffers()
+    logger = logging.getLogger("pricebot.tests")
+    logger.info("captured log entry for buffer")
+
+    app.dependency_overrides[get_db] = _override_get_db(session)
+    client = TestClient(app)
+    try:
+        response = client.get("/chat/tools/diagnostics")
+        assert response.status_code == 200
+
+        logs_response = client.get("/chat/tools/logs")
+        assert logs_response.status_code == 200
+        payload = logs_response.json()
+        assert payload["logs"]
+        assert any(
+            entry["message"] == "captured log entry for buffer"
+            for entry in payload["logs"]
+        )
+        assert payload["tool_calls"]
+        tool_call = payload["tool_calls"][-1]
+        assert tool_call["path"] == "/chat/tools/diagnostics"
+        assert tool_call["method"] == "GET"
+        assert tool_call["status"] == 200
+        assert tool_call["duration_ms"] >= 0
+
+        download = client.get("/chat/tools/logs/download")
+        assert download.status_code == 200
+        assert "attachment" in download.headers.get("content-disposition", "")
+    finally:
+        app.dependency_overrides.pop(get_db, None)
+        reset_buffers()
+
+
+def test_help_endpoint_returns_answer():
+    reset_help_index_cache()
+    client = TestClient(app)
+
+    response = client.post("/chat/tools/help", json={"query": "what is ai normalization"})
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["answer"]
+    assert "ai normalization" in payload["answer"].lower()
+    assert isinstance(payload["used_llm"], bool)
+    assert payload["sources"]
+    assert any("HELP_TOPICS" in source["path"] for source in payload["sources"])
+
+
+def test_diagnostics_includes_logs_and_versions(session):
+    reset_buffers()
+    logging.getLogger("pricebot.diagnostics").warning("diagnostics inline log")
+
+    vendor = models.Vendor(name="Diagnostics Vendor")
+    session.add(vendor)
+    session.commit()
+
+    app.dependency_overrides[get_db] = _override_get_db(session)
+    client = TestClient(app)
+    try:
+        response = client.get(
+            "/chat/tools/diagnostics",
+            params={"include": "logs,versions", "logs_limit": 5},
+        )
+        assert response.status_code == 200
+        payload = response.json()
+        logs_tail = payload.get("logs_tail")
+        assert logs_tail, payload
+        assert any(entry["message"] == "diagnostics inline log" for entry in logs_tail)
+
+        versions = payload.get("versions")
+        assert versions
+        assert versions["packages"]["fastapi"]
+        assert versions["packages"]["sqlmodel"]
+        assert versions["llm"]["default_model"] == OfferLLMExtractor.DEFAULT_MODEL
+        assert versions["feature_flags"]["enable_openai"] == payload["feature_flags"]["enable_openai"]
+    finally:
+        app.dependency_overrides.pop(get_db, None)
+        reset_buffers()
 
 
 def test_search_best_price_returns_best_offer(session):

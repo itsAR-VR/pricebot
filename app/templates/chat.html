@@ -47,6 +47,29 @@
     font-size: 14px;
   }
 
+  .chat-header-top {
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-start;
+    gap: 16px;
+  }
+
+  .diagnostics-btn {
+    border-radius: 12px;
+    border: 1px solid rgba(148, 163, 184, 0.3);
+    background: rgba(15, 23, 42, 0.65);
+    color: rgba(226, 232, 240, 0.9);
+    font-size: 13px;
+    padding: 10px 14px;
+    cursor: pointer;
+    transition: border-color 0.2s ease, transform 0.2s ease;
+  }
+
+  .diagnostics-btn:hover {
+    border-color: rgba(148, 163, 184, 0.55);
+    transform: translateY(-1px);
+  }
+
   .status-pill {
     display: inline-flex;
     align-items: center;
@@ -97,6 +120,7 @@
     display: flex;
     flex-direction: column;
     gap: 12px;
+    position: relative;
   }
 
   .composer textarea {
@@ -426,6 +450,135 @@
     color: rgba(226, 232, 240, 0.9);
   }
 
+  .mention-tray {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+  }
+
+  .mention-chip {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    border-radius: 999px;
+    padding: 6px 10px;
+    font-size: 12px;
+    background: rgba(56, 189, 248, 0.16);
+    color: rgba(226, 232, 240, 0.92);
+    border: 1px solid rgba(56, 189, 248, 0.3);
+  }
+
+  .mention-chip[data-type="product"] {
+    background: rgba(168, 85, 247, 0.16);
+    border-color: rgba(168, 85, 247, 0.32);
+    color: rgba(233, 213, 255, 0.92);
+  }
+
+  .mention-chip button {
+    background: transparent;
+    border: none;
+    color: inherit;
+    cursor: pointer;
+    padding: 0 2px;
+    line-height: 1;
+  }
+
+  .mention-chip button:focus-visible {
+    outline: 1px solid currentColor;
+    outline-offset: 2px;
+  }
+
+  .mention-helper {
+    font-size: 12px;
+    color: rgba(148, 163, 184, 0.78);
+  }
+
+  .mention-popover {
+    position: absolute;
+    z-index: 20;
+    min-width: 220px;
+    max-width: 320px;
+    border-radius: 12px;
+    border: 1px solid rgba(56, 189, 248, 0.38);
+    background: rgba(13, 29, 52, 0.96);
+    box-shadow: 0 12px 28px rgba(8, 24, 48, 0.45);
+    display: flex;
+    flex-direction: column;
+    padding: 8px 0;
+  }
+
+  .mention-popover[hidden] {
+    display: none;
+  }
+
+  .mention-popover-header {
+    padding: 4px 14px 6px 14px;
+    font-size: 12px;
+    text-transform: uppercase;
+    color: rgba(148, 163, 184, 0.78);
+    letter-spacing: 0.06em;
+  }
+
+  .mention-option {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 2px;
+    padding: 10px 14px;
+    font-size: 13px;
+    color: rgba(226, 232, 240, 0.94);
+    background: transparent;
+    border: none;
+    width: 100%;
+    text-align: left;
+    cursor: pointer;
+  }
+
+  .mention-option[data-active="true"] {
+    background: rgba(56, 189, 248, 0.18);
+  }
+
+  .mention-option span {
+    font-size: 12px;
+    color: rgba(148, 163, 184, 0.75);
+  }
+
+  .help-answer {
+    display: grid;
+    gap: 16px;
+  }
+
+  .help-sources {
+    display: grid;
+    gap: 12px;
+  }
+
+  .help-source {
+    border-radius: 12px;
+    border: 1px solid rgba(148, 163, 184, 0.2);
+    background: rgba(30, 41, 59, 0.6);
+    padding: 12px 16px;
+    display: grid;
+    gap: 6px;
+  }
+
+  .help-source h4 {
+    margin: 0;
+    font-size: 14px;
+    color: rgba(226, 232, 240, 0.96);
+  }
+
+  .help-source small {
+    font-size: 12px;
+    color: rgba(148, 163, 184, 0.78);
+  }
+
+  .help-source p {
+    margin: 0;
+    font-size: 13px;
+    color: rgba(203, 213, 225, 0.92);
+  }
+
   .bundle-footer {
     display: flex;
     flex-wrap: wrap;
@@ -492,12 +645,13 @@
 
   .doc-summary-list {
     margin: 0;
-    padding-left: 18px;
+    padding-left: 0;
     display: flex;
     flex-direction: column;
-    gap: 4px;
+    gap: 6px;
     font-size: 13px;
     color: rgba(226, 232, 240, 0.82);
+    list-style: none;
   }
 
   .doc-summary-empty {
@@ -536,6 +690,78 @@
     gap: 4px;
     font-size: 13px;
     color: rgba(226, 232, 240, 0.82);
+  }
+
+  .doc-offer-item {
+    border-radius: 10px;
+    border: 1px solid rgba(148, 163, 184, 0.25);
+    background: rgba(11, 19, 33, 0.6);
+    padding: 10px 12px;
+    display: grid;
+    gap: 4px;
+  }
+
+  .doc-offer-item.doc-offer-source-llm {
+    border-color: rgba(56, 189, 248, 0.45);
+    background: rgba(56, 189, 248, 0.12);
+  }
+
+  .doc-offer-item.doc-offer-source-heuristic {
+    border-color: rgba(148, 163, 184, 0.35);
+  }
+
+  .doc-offer-title {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+    font-weight: 600;
+    color: rgba(226, 232, 240, 0.9);
+  }
+
+  .doc-offer-details {
+    font-size: 12px;
+    color: rgba(148, 163, 184, 0.85);
+  }
+
+  .doc-offer-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    padding: 2px 8px;
+    border-radius: 999px;
+    font-size: 11px;
+    font-weight: 500;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    background: rgba(148, 163, 184, 0.2);
+    color: rgba(226, 232, 240, 0.92);
+    white-space: nowrap;
+  }
+
+  .doc-offer-badge-llm {
+    background: rgba(56, 189, 248, 0.18);
+    color: #38bdf8;
+  }
+
+  .doc-offer-badge-heuristic {
+    background: rgba(148, 163, 184, 0.25);
+    color: rgba(226, 232, 240, 0.75);
+  }
+
+  .doc-summary-warning {
+    border-radius: 12px;
+    border: 1px solid rgba(252, 165, 165, 0.45);
+    background: rgba(239, 68, 68, 0.14);
+    padding: 12px 14px;
+    font-size: 13px;
+    color: rgba(254, 226, 226, 0.9);
+    display: grid;
+    gap: 6px;
+  }
+
+  .doc-summary-warning strong {
+    color: rgba(254, 226, 226, 1);
   }
 
   @media (max-width: 900px) {
@@ -597,6 +823,393 @@
       return `${diffDays} day${diffDays === 1 ? "" : "s"} ago`;
     }
 
+    function normalizeId(value) {
+      if (value == null) return null;
+      try {
+        const text = String(value).trim();
+        if (!text || text === "undefined" || text === "null") return null;
+        return text;
+      } catch (_err) {
+        return null;
+      }
+    }
+
+    function gatherSourceCandidates(metadata) {
+      if (!metadata || typeof metadata !== "object") {
+        return [];
+      }
+      const candidates = [];
+      const directKeys = [
+        "offer_sources",
+        "offerSourceMap",
+        "offer_lineage",
+        "offerLineage",
+        "offer_source_map",
+        "normalization_sources",
+        "normalizationSources",
+        "sources",
+        "lineage",
+      ];
+      directKeys.forEach((key) => {
+        if (metadata[key]) {
+          candidates.push(metadata[key]);
+        }
+      });
+      const nestedKeys = [
+        "normalization",
+        "spreadsheet",
+        "flags",
+        "ingestion",
+        "header_analysis",
+        "analysis",
+        "summary",
+        "signals",
+      ];
+      nestedKeys.forEach((key) => {
+        const value = metadata[key];
+        if (value && typeof value === "object") {
+          directKeys.forEach((innerKey) => {
+            if (value[innerKey]) {
+              candidates.push(value[innerKey]);
+            }
+          });
+        }
+      });
+      return candidates;
+    }
+
+    function pickSourceFromCandidate(candidate, offerId, seen = new Set()) {
+      if (!candidate) return null;
+      const idStr = offerId;
+      if (typeof candidate === "string") {
+        const trimmed = candidate.trim();
+        return trimmed || null;
+      }
+      if (Array.isArray(candidate)) {
+        for (const item of candidate) {
+          if (!item) continue;
+          if (typeof item === "string") {
+            if (/llm|heuristic|manual/i.test(item) && item !== idStr) {
+              const trimmed = item.trim();
+              if (trimmed) {
+                return trimmed;
+              }
+            }
+            continue;
+          }
+          if (typeof item === "object") {
+            const hints = [
+              item.source,
+              item.origin,
+              item.method,
+              item.type,
+            ].map((hint) => (typeof hint === "string" ? hint.trim() : null));
+            const identifiers = [];
+            if (item.id != null) identifiers.push(normalizeId(item.id));
+            if (item.offer_id != null) identifiers.push(normalizeId(item.offer_id));
+            if (item.offerId != null) identifiers.push(normalizeId(item.offerId));
+            if (Array.isArray(item.ids)) {
+              item.ids.forEach((value) => identifiers.push(normalizeId(value)));
+            }
+            const hasMatch = identifiers.filter(Boolean).includes(idStr);
+            if (hasMatch) {
+              const declaredSource =
+                hints.find((hint) => hint) ||
+                (Array.isArray(item.sources)
+                  ? item.sources.find((value) => typeof value === "string" && value.trim())
+                  : null);
+              if (declaredSource) {
+                return declaredSource;
+              }
+            }
+          }
+        }
+        return null;
+      }
+      if (typeof candidate === "object") {
+        if (seen.has(candidate)) {
+          return null;
+        }
+        seen.add(candidate);
+        if (candidate[idStr]) {
+          const direct = candidate[idStr];
+          if (typeof direct === "string") {
+            const trimmed = direct.trim();
+            if (trimmed) {
+              return trimmed;
+            }
+          } else if (direct && typeof direct === "object") {
+            const fromObject =
+              (typeof direct.source === "string" && direct.source.trim()) ||
+              (typeof direct.origin === "string" && direct.origin.trim()) ||
+              (typeof direct.method === "string" && direct.method.trim());
+            if (fromObject) {
+              return fromObject;
+            }
+          }
+        }
+        for (const [key, value] of Object.entries(candidate)) {
+          if (Array.isArray(value)) {
+            const normalizedIds = value.map((entry) => normalizeId(entry)).filter(Boolean);
+            if (normalizedIds.includes(idStr)) {
+              const trimmedKey = key.trim();
+              if (trimmedKey) {
+                return trimmedKey;
+              }
+            }
+          } else if (value && typeof value === "string") {
+            if (normalizeId(key) === idStr) {
+              const trimmedValue = value.trim();
+              if (trimmedValue) {
+                return trimmedValue;
+              }
+            }
+          } else if (value && typeof value === "object") {
+            const nested = pickSourceFromCandidate(value, idStr, seen);
+            if (nested) {
+              return nested;
+            }
+          }
+        }
+        seen.delete(candidate);
+      }
+      return null;
+    }
+
+    function resolveOfferSource(offer, metadata) {
+      if (!offer) return null;
+      const directHints = [
+        offer.source,
+        offer.origin,
+        offer.normalization_source,
+        offer.normalized_source,
+      ];
+      if (offer.payload && typeof offer.payload === "object") {
+        directHints.push(offer.payload.source);
+      }
+      if (offer.raw_payload && typeof offer.raw_payload === "object") {
+        directHints.push(offer.raw_payload.source);
+      }
+      if (offer.metadata && typeof offer.metadata === "object") {
+        directHints.push(offer.metadata.source);
+      }
+      const hint = directHints.find((value) => typeof value === "string" && value.trim());
+      if (hint) {
+        return hint.trim();
+      }
+      const offerId = normalizeId(offer.id || offer.offer_id || offer.offerId);
+      if (!offerId) {
+        return null;
+      }
+      const candidates = gatherSourceCandidates(metadata);
+      for (const candidate of candidates) {
+        const resolved = pickSourceFromCandidate(candidate, offerId);
+        if (resolved) {
+          return resolved;
+        }
+      }
+      return null;
+    }
+
+    const HEADER_WARNING_DEFAULT =
+      "Column headers looked suspect — double-check that prices and quantities line up.";
+
+    function collectMetadataObjects(metadata) {
+      const results = [];
+      if (!metadata || typeof metadata !== "object") {
+        return results;
+      }
+      const queue = [metadata];
+      const visited = new Set();
+      while (queue.length) {
+        const current = queue.shift();
+        if (!current || typeof current !== "object" || visited.has(current)) {
+          continue;
+        }
+        visited.add(current);
+        results.push(current);
+        const keys = [
+          "flags",
+          "normalization",
+          "spreadsheet",
+          "ingestion",
+          "header_analysis",
+          "analysis",
+          "signals",
+          "quality",
+        ];
+        keys.forEach((key) => {
+          const value = current[key];
+          if (value && typeof value === "object") {
+            queue.push(value);
+          }
+        });
+      }
+      return results;
+    }
+
+    function extractHeaderWarnings(metadata, fileType) {
+      const messages = [];
+      if (!metadata || typeof metadata !== "object") {
+        return messages;
+      }
+      const normalizedType = (fileType || "").toLowerCase();
+      const processorHint = String(metadata.processor || metadata.ingestion_processor || "").toLowerCase();
+      const likelySpreadsheet =
+        /sheet|xls|xlsx|csv/.test(normalizedType) || /sheet|xls|xlsx|csv/.test(processorHint);
+
+      const addMessage = (text) => {
+        if (!text) return;
+        const value = String(text).trim();
+        if (!value) return;
+        if (!messages.some((existing) => existing.toLowerCase() === value.toLowerCase())) {
+          messages.push(value);
+        }
+      };
+
+      const candidateObjects = collectMetadataObjects(metadata);
+      candidateObjects.forEach((obj) => {
+        if (!obj || typeof obj !== "object") return;
+        const boolKeys = [
+          "suspect_headers",
+          "headers_suspect",
+          "header_inferred",
+          "headerless",
+          "header_fallback",
+          "header_warning",
+          "header_issue",
+          "headerSuspect",
+          "headerInferred",
+          "headersSuspect",
+          "headerFallback",
+        ];
+        boolKeys.forEach((key) => {
+          const value = obj[key];
+          if (value === true) {
+            if (likelySpreadsheet) {
+              addMessage(HEADER_WARNING_DEFAULT);
+            }
+          } else if (typeof value === "string" && /suspect|inferred|fallback|unknown/i.test(value)) {
+            addMessage(HEADER_WARNING_DEFAULT);
+          }
+        });
+
+        const statusCandidates = [
+          obj.header_status,
+          obj.headerStatus,
+          obj.header_quality,
+          obj.headerQuality,
+          obj.header_confidence_label,
+        ];
+        statusCandidates.forEach((status) => {
+          if (typeof status === "string" && /suspect|inferred|fallback|unknown/i.test(status)) {
+            addMessage(HEADER_WARNING_DEFAULT);
+          }
+        });
+
+        const confidence = obj.header_confidence;
+        if (typeof confidence === "number" && confidence < 0.6) {
+          addMessage(HEADER_WARNING_DEFAULT);
+        }
+
+        const arrays = [
+          obj.header_warnings,
+          obj.warnings,
+          obj.ingestion_warnings,
+          obj.ingestion_errors,
+          obj.messages,
+        ];
+        arrays.forEach((list) => {
+          if (!Array.isArray(list)) return;
+          list.forEach((item) => {
+            if (!item) return;
+            if (typeof item === "string" && /header/i.test(item)) {
+              addMessage(item);
+            } else if (typeof item === "object") {
+              const text = item.message || item.detail || item.reason || item.text;
+              if (text && /header/i.test(text)) {
+                addMessage(text);
+              }
+            }
+          });
+        });
+      });
+
+      if (!messages.length && !likelySpreadsheet) {
+        return messages;
+      }
+      return messages;
+    }
+
+    function isTriggerBoundary(char) {
+      if (!char) return true;
+      return /\s|[\(\)\[\]\{\},.;:!?]/.test(char);
+    }
+
+    function findActiveMention(text, cursor) {
+      if (cursor == null) return null;
+      const slice = text.slice(0, cursor);
+      const candidates = [];
+
+      const lastAt = slice.lastIndexOf("@");
+      if (lastAt >= 0 && isTriggerBoundary(slice[lastAt - 1])) {
+        const query = text.slice(lastAt + 1, cursor);
+        if (!query.includes(" ") && !query.includes("\n") && !query.includes("\t")) {
+          candidates.push({
+            type: "vendor",
+            trigger: "@",
+            start: lastAt,
+            cursor,
+            query,
+            replaceStart: lastAt,
+          });
+        }
+      }
+
+      const lastHash = slice.lastIndexOf("#");
+      if (lastHash >= 0 && isTriggerBoundary(slice[lastHash - 1])) {
+        const query = text.slice(lastHash + 1, cursor);
+        if (!query.includes(" ") && !query.includes("\n") && !query.includes("\t")) {
+          candidates.push({
+            type: "product",
+            trigger: "#",
+            start: lastHash,
+            cursor,
+            query,
+            replaceStart: lastHash,
+          });
+        }
+      }
+
+      const lowerSlice = slice.toLowerCase();
+      const slashTrigger = "/product";
+      const lastSlash = lowerSlice.lastIndexOf(slashTrigger);
+      if (lastSlash >= 0 && isTriggerBoundary(slice[lastSlash - 1])) {
+        const rawQuery = text.slice(lastSlash + slashTrigger.length, cursor);
+        if (!rawQuery.includes("\n")) {
+          const trimmedLeading = rawQuery.replace(/^[\s]+/, "");
+          const consumedWhitespace = rawQuery.length - trimmedLeading.length;
+          candidates.push({
+            type: "product",
+            trigger: "/product",
+            start: lastSlash,
+            cursor,
+            query: trimmedLeading,
+            replaceStart: lastSlash,
+            consumedWhitespace,
+          });
+        }
+      }
+
+      if (!candidates.length) {
+        return null;
+      }
+      return candidates.reduce((latest, candidate) => {
+        if (!latest) return candidate;
+        return candidate.start > latest.start ? candidate : latest;
+      }, null);
+    }
+
     const DIAGNOSTIC_KEYWORDS = [
       "connected",
       "connection",
@@ -632,12 +1245,33 @@
       "what is the price",
       "what quantity",
       "what quantities",
-      "what's listed",
-      "list the products",
+    "what's listed",
+    "list the products",
+  ];
+
+    const HELP_KEYWORDS = [
+      "what is ai normalization",
+      "ai normalization",
+      "how do i re-ingest",
+      "how do i reingest",
+      "re-ingest",
+      "reingest",
+      "help topic",
+      "faq",
+      "prefer llm",
+      "prefer_llm",
+      "related document",
+      "related documents",
+      "template download",
+      "enabling openai",
+      "enable openai",
     ];
 
     function detectIntent({ query, hasAttachments }) {
       const normalized = (query || "").toLowerCase();
+      if (normalized && HELP_KEYWORDS.some((phrase) => normalized.includes(phrase))) {
+        return "help";
+      }
       if (normalized && DIAGNOSTIC_KEYWORDS.some((phrase) => normalized.includes(phrase))) {
         return "diagnostics";
       }
@@ -956,6 +1590,56 @@
       );
     }
 
+    function HelpMessage({ message }) {
+      const metadataChildren = [
+        React.createElement("span", { key: "bot", className: "inline-badge" }, "Pricebot"),
+        React.createElement("span", { key: "help", className: "inline-badge" }, "Help"),
+      ];
+      if (message.used_llm) {
+        metadataChildren.push(
+          React.createElement("span", { key: "llm", className: "inline-badge" }, "LLM assisted")
+        );
+      }
+      metadataChildren.push(
+        React.createElement("span", { key: "time" }, formatDate(message.timestamp))
+      );
+
+      const sourcesContent =
+        message.sources && message.sources.length
+          ? React.createElement(
+              "div",
+              { className: "help-sources" },
+              message.sources.map((source, index) =>
+                React.createElement(
+                  "div",
+                  { key: `${source.path}-${source.heading || index}`, className: "help-source" },
+                  React.createElement("h4", null, source.heading || "Documentation"),
+                  React.createElement("small", null, source.path),
+                  source.snippet ? React.createElement("p", null, source.snippet) : null
+                )
+              )
+            )
+          : React.createElement(
+              "p",
+              { style: { margin: 0, fontSize: "13px", color: "rgba(148, 163, 184, 0.8)" } },
+              "No specific documentation matched, but you can explore the Help Topics manual."
+            );
+
+      return React.createElement(
+        "div",
+        { className: "message-bubble" },
+        React.createElement("div", { className: "message-metadata" }, ...metadataChildren),
+        React.createElement(
+          "div",
+          { className: "help-answer" },
+          message.answer
+            ? React.createElement("p", null, message.answer)
+            : React.createElement("p", null, "No help answer available."),
+          sourcesContent
+        )
+      );
+    }
+
     function TextMessage({ message }) {
       return React.createElement(
         "div",
@@ -982,6 +1666,34 @@
                   `${file.name} • ${(file.size / 1024).toFixed(1)} KB`
                 )
               )
+            )
+          : null,
+        message.mentions &&
+        ((message.mentions.vendors && message.mentions.vendors.length) ||
+          (message.mentions.products && message.mentions.products.length))
+          ? React.createElement(
+              "div",
+              { className: "mention-tray", style: { marginTop: "8px" } },
+              [
+                ...(message.mentions.vendors || []).map((mention) =>
+                  React.createElement(
+                    "span",
+                    { key: `vendor-${mention.id}`, className: "mention-chip", "data-type": "vendor" },
+                    `@${mention.label}`
+                  )
+                ),
+                ...(message.mentions.products || []).map((mention) =>
+                  React.createElement(
+                    "span",
+                    {
+                      key: `product-${mention.id}`,
+                      className: "mention-chip",
+                      "data-type": "product",
+                    },
+                    `#${mention.label}`
+                  )
+                ),
+              ]
             )
           : null
       );
@@ -1024,10 +1736,19 @@
       const [attachments, setAttachments] = useState([]);
       const [uploadVendor, setUploadVendor] = useState("");
       const [preferLLM, setPreferLLM] = useState(false);
+      const [enterSends, setEnterSends] = useState(true);
       const [isSending, setIsSending] = useState(false);
       const [errorBanner, setErrorBanner] = useState(null);
+      const [vendorMentions, setVendorMentions] = useState([]);
+      const [productMentions, setProductMentions] = useState([]);
+      const [mentionContext, setMentionContext] = useState(null);
+      const [mentionSuggestions, setMentionSuggestions] = useState([]);
+      const [mentionHighlighted, setMentionHighlighted] = useState(0);
+      const [pendingVendor, setPendingVendor] = useState(null);
       const dropRef = useRef(null);
       const transcriptRef = useRef(null);
+      const composerRef = useRef(null);
+      const mentionAbortRef = useRef(null);
 
       useEffect(() => {
         if (!transcriptRef.current) return;
@@ -1039,6 +1760,120 @@
           if (att.preview) URL.revokeObjectURL(att.preview);
         });
       }, [attachments]);
+
+      useEffect(() => {
+        try {
+          const storedLLM = localStorage.getItem("pricebot.prefer_llm");
+          if (storedLLM != null) {
+            setPreferLLM(storedLLM === "true");
+          }
+        } catch (_err) {
+          /* noop */
+        }
+        try {
+          const storedEnterSend = localStorage.getItem("pricebot.enter_sends");
+          if (storedEnterSend != null) {
+            setEnterSends(storedEnterSend !== "false");
+          }
+        } catch (_err) {
+          /* noop */
+        }
+      }, []);
+
+      useEffect(() => {
+        try {
+          localStorage.setItem("pricebot.prefer_llm", preferLLM ? "true" : "false");
+        } catch (_err) {
+          /* noop */
+        }
+      }, [preferLLM]);
+
+      useEffect(() => {
+        try {
+          localStorage.setItem("pricebot.enter_sends", enterSends ? "true" : "false");
+        } catch (_err) {
+          /* noop */
+        }
+      }, [enterSends]);
+
+      useEffect(() => {
+        if (mentionAbortRef.current) {
+          mentionAbortRef.current.abort();
+          mentionAbortRef.current = null;
+        }
+        if (!mentionContext) {
+          setMentionSuggestions([]);
+          setMentionHighlighted(0);
+          return;
+        }
+        const controller = new AbortController();
+        mentionAbortRef.current = controller;
+        const fetchSuggestions = async () => {
+          try {
+            let suggestions = [];
+            if (mentionContext.type === "vendor") {
+              const vendorUrl = `${config.vendors}?q=${encodeURIComponent(
+                mentionContext.query.trim()
+              )}&limit=6`;
+              const response = await fetch(vendorUrl, { signal: controller.signal });
+              if (response.ok) {
+                const payload = await response.json();
+                if (Array.isArray(payload)) {
+                  suggestions = payload.map((item) => ({
+                    id: item.id,
+                    label: item.name,
+                    subtitle: null,
+                    type: "vendor",
+                  }));
+                }
+              }
+            } else if (mentionContext.type === "product") {
+              const query = mentionContext.query.trim();
+              if (!query) {
+                setMentionSuggestions([]);
+                setMentionHighlighted(0);
+                return;
+              }
+              const response = await fetch(config.resolve, {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                signal: controller.signal,
+                body: JSON.stringify({ query, limit: 6, offset: 0 }),
+              });
+              if (response.ok) {
+                const payload = await response.json();
+                if (payload && Array.isArray(payload.products)) {
+                  suggestions = payload.products.map((product) => ({
+                    id: product.id,
+                    label: product.canonical_name,
+                    subtitle: [product.model_number, product.upc]
+                      .filter(Boolean)
+                      .join(" • ") || null,
+                    type: "product",
+                    raw: product,
+                  }));
+                }
+              }
+            }
+            if (mentionAbortRef.current === controller) {
+              setMentionSuggestions(suggestions);
+              setMentionHighlighted(0);
+            }
+          } catch (error) {
+            if (error.name === "AbortError") {
+              return;
+            }
+            console.error("Failed to load mention suggestions", error);
+            if (mentionAbortRef.current === controller) {
+              setMentionSuggestions([]);
+            }
+          }
+        };
+        fetchSuggestions();
+        return () => {
+          controller.abort();
+        };
+      }, [mentionContext, config.resolve, config.vendors]);
 
       function updateProgress(messageId, stepId, status, text) {
         setMessages((prev) =>
@@ -1148,13 +1983,6 @@
         return resolved;
       }
 
-      function extractVendorHandle(text) {
-        if (!text) return null;
-        const match = text.match(/@([A-Za-z0-9_\-]+)/);
-        if (!match) return null;
-        return match[1].replaceAll("_", " ");
-      }
-
       function handleFiles(selectedFiles) {
         const additions = Array.from(selectedFiles).map((file) => {
           const isImage = file.type.startsWith("image/");
@@ -1165,9 +1993,218 @@
           };
         });
         setAttachments((prev) => [...prev, ...additions]);
-        const handleVendor = extractVendorHandle(composer);
-        if (handleVendor && !uploadVendor) {
-          setUploadVendor(handleVendor);
+        if (!uploadVendor && vendorMentions.length) {
+          setUploadVendor(vendorMentions[0].label);
+        }
+      }
+
+      function applyMentionSelection(option, contextOverride) {
+        const baseContext = contextOverride || mentionContext;
+        if (!baseContext) {
+          return;
+        }
+        if (mentionAbortRef.current) {
+          mentionAbortRef.current.abort();
+          mentionAbortRef.current = null;
+        }
+
+        const composerValue = composerRef.current ? composerRef.current.value : composer;
+        let replaceStart =
+          baseContext.replaceStart != null ? baseContext.replaceStart : baseContext.start || 0;
+        let cursorPoint =
+          baseContext.cursor != null ? baseContext.cursor : baseContext.start || replaceStart;
+        if (cursorPoint < replaceStart) {
+          cursorPoint = replaceStart;
+        }
+        if (composerValue) {
+          const normalizedValue = composerValue.toLowerCase();
+          const expectedToken =
+            (baseContext.trigger || "@") + (baseContext.query || "").toLowerCase();
+          const currentSlice = normalizedValue.slice(replaceStart, cursorPoint);
+          if (baseContext.query && !currentSlice.includes((baseContext.query || "").toLowerCase())) {
+            const fallbackIndex = normalizedValue.lastIndexOf(expectedToken);
+            if (fallbackIndex >= 0) {
+              replaceStart = fallbackIndex;
+              cursorPoint = fallbackIndex + expectedToken.length;
+            }
+          }
+          if (cursorPoint > composerValue.length) {
+            cursorPoint = composerValue.length;
+          }
+          if (replaceStart > composerValue.length) {
+            replaceStart = composerValue.length;
+          }
+        }
+
+        const safeContext = {
+          replaceStart,
+          cursor: cursorPoint,
+        };
+
+        let nextCursor = null;
+        setComposer((prev) => {
+          if (safeContext.replaceStart > prev.length) {
+            return prev;
+          }
+          const before = prev.slice(0, safeContext.replaceStart);
+          const after = prev.slice(safeContext.cursor);
+          const insertion = option.label;
+          const needsSpace = after.length === 0 || !/^[\s]/.test(after);
+          nextCursor = before.length + insertion.length + (needsSpace ? 1 : 0);
+          return `${before}${insertion}${needsSpace ? " " : ""}${after}`;
+        });
+
+        requestAnimationFrame(() => {
+          if (composerRef.current && nextCursor != null) {
+            composerRef.current.focus();
+            composerRef.current.selectionStart = nextCursor;
+            composerRef.current.selectionEnd = nextCursor;
+          }
+        });
+
+        setMentionContext(null);
+        setMentionSuggestions([]);
+        setMentionHighlighted(0);
+
+        if (option.type === "vendor") {
+          setVendorMentions((prev) => {
+            if (prev.some((entry) => entry.id === option.id)) {
+              return prev;
+            }
+            return [...prev, { id: option.id, label: option.label }];
+          });
+          setUploadVendor((prev) => (prev ? prev : option.label));
+          setPendingVendor(null);
+          setErrorBanner(null);
+        } else if (option.type === "product") {
+          setProductMentions((prev) => {
+            if (prev.some((entry) => entry.id === option.id)) {
+              return prev;
+            }
+            const payload = option.raw
+              ? { id: option.id, label: option.label, data: option.raw }
+              : { id: option.id, label: option.label };
+            return [...prev, payload];
+          });
+        }
+      }
+
+      function removeMention(type, id) {
+        if (type === "vendor") {
+          setVendorMentions((prev) => {
+            const removed = prev.find((entry) => entry.id === id);
+            const next = prev.filter((entry) => entry.id !== id);
+            if (!removed) {
+              return prev;
+            }
+            setUploadVendor((current) => {
+              if (next.length > 0) {
+                return next[0].label;
+              }
+              if (current && current === removed.label) {
+                return "";
+              }
+              return current;
+            });
+            return next;
+          });
+          clearPendingVendor();
+        } else if (type === "product") {
+          setProductMentions((prev) => prev.filter((entry) => entry.id !== id));
+        }
+      }
+
+      async function recordPendingVendor(rawQuery, contextInfo) {
+        const query = (rawQuery || "").trim();
+        if (!query) return;
+        setPendingVendor((prev) => {
+          if (prev && prev.query === query && prev.status === "loading") {
+            return prev;
+          }
+          return {
+            query,
+            status: "loading",
+            suggestions: [],
+            context: contextInfo
+              ? {
+                  replaceStart: contextInfo.replaceStart,
+                  cursor: contextInfo.cursor,
+                  query: contextInfo.query,
+                  trigger: contextInfo.trigger,
+                  start: contextInfo.start,
+                }
+              : null,
+          };
+        });
+        setErrorBanner(`Select a vendor for “${query}” or press Esc to keep typing.`);
+        try {
+          const response = await fetch(`${config.vendors}?q=${encodeURIComponent(query)}&limit=5`);
+          if (!response.ok) {
+            throw new Error(`lookup failed with ${response.status}`);
+          }
+          const payload = await response.json();
+          setPendingVendor((prev) => {
+            if (!prev || prev.query !== query) {
+              return prev;
+            }
+            return {
+              query,
+              status: "ready",
+              suggestions: Array.isArray(payload) ? payload.slice(0, 5) : [],
+              context: prev.context,
+            };
+          });
+        } catch (error) {
+          console.error("Pending vendor search failed", error);
+          setPendingVendor((prev) => {
+            if (!prev || prev.query !== query) {
+              return prev;
+            }
+            return { query, status: "error", suggestions: [], context: prev.context || null };
+          });
+        }
+      }
+
+      function clearPendingVendor(query) {
+        setPendingVendor((prev) => {
+          if (!prev) return prev;
+          if (!query || prev.query === query) {
+            return null;
+          }
+          return prev;
+        });
+        if (pendingVendor && (!query || pendingVendor.query === query)) {
+          setErrorBanner(null);
+        }
+      }
+
+      function handleComposerChange(event) {
+        const { value, selectionStart } = event.target;
+        setComposer(value);
+
+        const active = findActiveMention(value, selectionStart);
+
+        if (active) {
+          if (!mentionContext || mentionContext.start !== active.start || mentionContext.type !== active.type) {
+            setMentionHighlighted(0);
+          }
+          if (active.type === "vendor") {
+            clearPendingVendor();
+          }
+          setMentionContext(active);
+        } else {
+          if (mentionContext && mentionContext.type === "vendor" && mentionContext.query.trim()) {
+            recordPendingVendor(mentionContext.query, mentionContext);
+          }
+          setMentionContext(null);
+        }
+
+        if (pendingVendor) {
+          const needle = `@${pendingVendor.query.toLowerCase()}`;
+          const normalized = value.toLowerCase();
+          if (!normalized.includes(needle)) {
+            clearPendingVendor(pendingVendor.query);
+          }
         }
       }
 
@@ -1175,12 +2212,30 @@
         const trimmed = composer.trim();
         const intent = detectIntent({ query: trimmed, hasAttachments: attachments.length > 0 });
         const shouldUploadAttachments = attachments.length > 0 && intent !== "diagnostics";
+        const activeVendorMention =
+          mentionContext && mentionContext.type === "vendor" && mentionContext.query.trim();
+        const selectedVendor = vendorMentions.length ? vendorMentions[0] : null;
+        const vendorLabelForUploads = selectedVendor ? selectedVendor.label : uploadVendor.trim();
 
+        if (activeVendorMention) {
+          await recordPendingVendor(mentionContext.query, mentionContext);
+          return;
+        }
+        if (pendingVendor && pendingVendor.query) {
+          setErrorBanner(`Select a vendor for “${pendingVendor.query}” before sending.`);
+          if (pendingVendor.status !== "loading") {
+            await recordPendingVendor(pendingVendor.query, pendingVendor.context || null);
+          }
+          return;
+        }
         if (!trimmed && !attachments.length) {
           return;
         }
-        if (shouldUploadAttachments && !uploadVendor.trim()) {
-          setErrorBanner("Provide a vendor name for the uploads (see attachment tray).");
+        if (shouldUploadAttachments && !vendorLabelForUploads) {
+          setErrorBanner("Select a vendor mention or enter a vendor name for the uploads.");
+          if (!selectedVendor && uploadVendor.trim()) {
+            await recordPendingVendor(uploadVendor);
+          }
           return;
         }
         setErrorBanner(null);
@@ -1195,9 +2250,18 @@
             name: item.file.name,
             size: item.file.size,
           })),
+          mentions: {
+            vendors: vendorMentions.map((entry) => ({ id: entry.id, label: entry.label })),
+            products: productMentions.map((entry) => ({ id: entry.id, label: entry.label })),
+          },
           timestamp: new Date().toISOString(),
         };
         setMessages((prev) => [...prev, userMessage]);
+
+        const queryForTools =
+          productMentions.length > 0
+            ? productMentions.map((entry) => entry.data?.canonical_name || entry.label).join(", ")
+            : trimmed || "best price";
 
         const progressId = uid("progress");
         let resolvedDocuments = [];
@@ -1207,9 +2271,11 @@
         const progressSteps = [];
         const uploadStepStatus =
           attachments.length === 0 ? "done" : shouldUploadAttachments ? "pending" : "done";
+        const uploadStepLabel =
+          preferLLM && shouldUploadAttachments ? "Upload attachments (AI normalization)" : "Upload attachments";
         progressSteps.push({
           id: "upload",
-          label: "Upload attachments",
+          label: uploadStepLabel,
           status: uploadStepStatus,
         });
 
@@ -1218,6 +2284,9 @@
           progressSteps.push({ id: "format", label: "Compose answer", status: "pending" });
         } else if (intent === "document_summary") {
           progressSteps.push({ id: "summarize", label: "Summarize documents", status: "pending" });
+          progressSteps.push({ id: "format", label: "Compose answer", status: "pending" });
+        } else if (intent === "help") {
+          progressSteps.push({ id: "help_lookup", label: "Look up help topics", status: "pending" });
           progressSteps.push({ id: "format", label: "Compose answer", status: "pending" });
         } else {
           progressSteps.push({ id: "resolve", label: "Resolve products", status: "pending" });
@@ -1230,6 +2299,8 @@
             ? "Checking diagnostics…"
             : intent === "document_summary"
             ? "Summarizing documents…"
+            : intent === "help"
+            ? "Looking up help topics…"
             : "Preparing tools…";
 
         const progressMessage = {
@@ -1250,7 +2321,7 @@
 
         try {
           if (shouldUploadAttachments) {
-            const docIds = await uploadFiles(attachments, uploadVendor.trim(), progressId, preferLLM);
+            const docIds = await uploadFiles(attachments, vendorLabelForUploads, progressId, preferLLM);
             resolvedDocuments = await pollDocuments(docIds, progressId);
             shouldResetUploads = true;
           }
@@ -1355,7 +2426,9 @@
                 documents: resolvedDocuments.map((doc) => ({
                   id: doc.id,
                   file_name: doc.file_name,
+                  file_type: doc.file_type,
                   status: doc.status,
+                  metadata: doc && typeof doc.metadata === "object" && doc.metadata !== null ? doc.metadata : {},
                 })),
               };
               setMessages((prev) => [...prev, summaryMessage]);
@@ -1383,22 +2456,28 @@
               updateProgress(progressId, "format", "active", "Formatting answer…");
             }
 
-            const entries = detailPayloads.map((doc) => ({
-              id: doc.id,
-              file_name: doc.file_name,
-              status: doc.status,
-              offers: Array.isArray(doc.offers)
-                ? doc.offers.map((offer) => ({
-                    id: offer.id,
-                    product_name: offer.product_name,
-                    price: offer.price,
-                    currency: offer.currency,
-                    quantity: offer.quantity,
-                    condition: offer.condition,
-                    location: offer.location,
-                  }))
-                : [],
-            }));
+            const entries = detailPayloads.map((doc) => {
+              const metadata = doc && typeof doc.metadata === "object" && doc.metadata !== null ? doc.metadata : {};
+              const offers = Array.isArray(doc.offers)
+                ? doc.offers.map((offer) => {
+                    const normalized = { ...offer };
+                    const source = resolveOfferSource(offer, metadata);
+                    if (source) {
+                      normalized.source = source;
+                    }
+                    return normalized;
+                  })
+                : [];
+              return {
+                id: doc.id,
+                file_name: doc.file_name,
+                file_type: doc.file_type,
+                status: doc.status,
+                offers,
+                metadata,
+                headerWarnings: extractHeaderWarnings(metadata, doc.file_type),
+              };
+            });
 
             const totalOffers = entries.reduce((sum, entry) => sum + entry.offers.length, 0);
             const summary =
@@ -1418,10 +2497,54 @@
               documents: resolvedDocuments.map((doc) => ({
                 id: doc.id,
                 file_name: doc.file_name,
+                file_type: doc.file_type,
                 status: doc.status,
+                metadata: doc && typeof doc.metadata === "object" && doc.metadata !== null ? doc.metadata : {},
               })),
             };
             setMessages((prev) => [...prev, summaryMessage]);
+            if (hasStep("format")) {
+              updateProgress(progressId, "format", "done", "Answer ready.");
+            }
+            succeeded = true;
+            return;
+          }
+
+          if (intent === "help") {
+            if (!config.help) {
+              throw new Error("Help endpoint not configured");
+            }
+            if (hasStep("help_lookup")) {
+              updateProgress(progressId, "help_lookup", "active", "Searching help topics…");
+            }
+            const helpResponse = await fetch(config.help, {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({
+                query: trimmed || "pricebot help",
+                limit: 3,
+              }),
+            });
+            if (!helpResponse.ok) {
+              throw new Error(`Help lookup failed (${helpResponse.status})`);
+            }
+            const helpPayload = await helpResponse.json();
+            if (hasStep("help_lookup")) {
+              updateProgress(progressId, "help_lookup", "done", "Help topics retrieved.");
+            }
+            if (hasStep("format")) {
+              updateProgress(progressId, "format", "active", "Formatting answer…");
+            }
+            const helpMessage = {
+              id: uid("help"),
+              role: "assistant",
+              variant: "help",
+              timestamp: new Date().toISOString(),
+              answer: helpPayload.answer || "No help details available.",
+              sources: Array.isArray(helpPayload.sources) ? helpPayload.sources : [],
+              used_llm: Boolean(helpPayload.used_llm),
+            };
+            setMessages((prev) => [...prev, helpMessage]);
             if (hasStep("format")) {
               updateProgress(progressId, "format", "done", "Answer ready.");
             }
@@ -1436,7 +2559,7 @@
             method: "POST",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({
-              query: trimmed || "best price",
+              query: queryForTools,
               limit: 5,
               offset: 0,
             }),
@@ -1449,10 +2572,9 @@
             updateProgress(progressId, "resolve", "done", "Products resolved.");
           }
 
-          const handleVendor = extractVendorHandle(trimmed);
-          if (handleVendor) {
-            vendorName = handleVendor;
-            vendorId = await resolveVendorId(handleVendor);
+          if (selectedVendor) {
+            vendorName = selectedVendor.label;
+            vendorId = selectedVendor.id;
           } else if (uploadVendor.trim()) {
             vendorName = uploadVendor.trim();
             vendorId = await resolveVendorId(uploadVendor.trim());
@@ -1470,7 +2592,7 @@
             method: "POST",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({
-              query: trimmed || "best price",
+              query: queryForTools,
               limit: 5,
               offset: 0,
               filters,
@@ -1565,8 +2687,65 @@
       }
 
       function handleKeyDown(event) {
-        if (event.key === "Enter" && (event.metaKey || event.ctrlKey)) {
-          handleSend();
+        const hasSuggestions = mentionContext && mentionSuggestions.length > 0;
+        if (mentionContext) {
+          if (event.key === "ArrowDown" && hasSuggestions) {
+            event.preventDefault();
+            setMentionHighlighted((prev) => (prev + 1) % mentionSuggestions.length);
+            return;
+          }
+          if (event.key === "ArrowUp" && hasSuggestions) {
+            event.preventDefault();
+            setMentionHighlighted((prev) =>
+              prev - 1 < 0 ? mentionSuggestions.length - 1 : prev - 1
+            );
+            return;
+          }
+          if (event.key === "Tab" && hasSuggestions) {
+            event.preventDefault();
+            applyMentionSelection(mentionSuggestions[mentionHighlighted]);
+            return;
+          }
+          if (event.key === "Enter" && !event.shiftKey && !event.metaKey && !event.ctrlKey) {
+            if (hasSuggestions) {
+              event.preventDefault();
+              applyMentionSelection(mentionSuggestions[mentionHighlighted]);
+              return;
+            }
+          }
+          if (event.key === "Escape") {
+            event.preventDefault();
+            setMentionContext(null);
+            setMentionSuggestions([]);
+            setMentionHighlighted(0);
+            clearPendingVendor();
+            return;
+          }
+        }
+
+        if (event.key === "Enter") {
+          const modifierSend = event.metaKey || event.ctrlKey;
+          if (enterSends) {
+            if (!event.shiftKey && !modifierSend) {
+              event.preventDefault();
+              if (!isSending) {
+                handleSend();
+              }
+              return;
+            }
+            if (modifierSend) {
+              event.preventDefault();
+              if (!isSending) {
+                handleSend();
+              }
+              return;
+            }
+          } else if (modifierSend) {
+            event.preventDefault();
+            if (!isSending) {
+              handleSend();
+            }
+          }
         }
       }
 
@@ -1589,18 +2768,15 @@
         dropRef.current && dropRef.current.classList.remove("drop-target");
       }
 
-    const quickActions = useMemo(() => {
-      const actions = [
+    const quickActions = useMemo(
+      () => [
         { label: "Find best price", type: "prompt", text: "Find best price for iPhone 15 Pro in Miami" },
         { label: "Upload price sheet", type: "prompt", text: "@TechSupplier Uploading SB Technology Pricelist Oct" },
         { label: "Check Samsung foldables", type: "prompt", text: "Show Samsung Galaxy Z Fold 6 offers" },
         { label: "Download template", type: "link", href: config.template_download },
-      ];
-      if (devMode && config.diagnostics_download) {
-        actions.push({ label: "Download diagnostics", type: "link", href: config.diagnostics_download });
-      }
-      return actions;
-    }, [config.template_download, config.diagnostics_download, devMode]);
+      ],
+      [config.template_download]
+    );
 
     const environmentLabel = useMemo(() => {
       if (!environment) {
@@ -1613,19 +2789,43 @@
       return `${environment} mode`;
     }, [environment]);
 
+    const showDiagnosticsButton = Boolean(devMode && config.diagnostics_download);
+
+    const handleDiagnosticsDownload = () => {
+      if (!config.diagnostics_download) return;
+      window.open(config.diagnostics_download, "_blank", "noopener");
+    };
+
       return React.createElement(
         "div",
         { className: "chat-shell" },
         React.createElement(
           "section",
           { className: "chat-header" },
-          React.createElement("div", null,
-            React.createElement("h1", null, "Price Intelligence Workspace"),
+          React.createElement(
+            "div",
+            { className: "chat-header-top" },
             React.createElement(
-              "p",
+              "div",
               null,
-              "Attach vendor artefacts, ask natural questions, and track tool calls live."
-            )
+              React.createElement("h1", null, "Price Intelligence Workspace"),
+              React.createElement(
+                "p",
+                null,
+                "Attach vendor artefacts, ask natural questions, and track tool calls live."
+              )
+            ),
+            showDiagnosticsButton
+              ? React.createElement(
+                  "button",
+                  {
+                    type: "button",
+                    className: "diagnostics-btn",
+                    onClick: handleDiagnosticsDownload,
+                  },
+                  "Download diagnostics"
+                )
+              : null
           ),
           React.createElement(
             "div",
@@ -1681,6 +2881,9 @@
             if (message.variant === "answer") {
               return React.createElement(AnswerMessage, { key: message.id, message });
             }
+            if (message.variant === "help") {
+              return React.createElement(HelpMessage, { key: message.id, message });
+            }
             if (message.variant === "document_summary") {
               return React.createElement(DocumentSummaryMessage, { key: message.id, message });
             }
@@ -1735,13 +2938,147 @@
                 })
               )
             : null,
+          vendorMentions.length || productMentions.length
+            ? React.createElement(
+                "div",
+                { className: "mention-tray", role: "group", "aria-label": "Selected mentions" },
+                [
+                  ...vendorMentions.map((mention) =>
+                    React.createElement(
+                      "span",
+                      { key: `vendor-${mention.id}`, className: "mention-chip", "data-type": "vendor" },
+                      `@${mention.label}`,
+                      React.createElement(
+                        "button",
+                        {
+                          type: "button",
+                          onClick: () => removeMention("vendor", mention.id),
+                          "aria-label": `Remove vendor ${mention.label}`,
+                        },
+                        "×"
+                      )
+                    )
+                  ),
+                  ...productMentions.map((mention) =>
+                    React.createElement(
+                      "span",
+                      { key: `product-${mention.id}`, className: "mention-chip", "data-type": "product" },
+                      `#${mention.label}`,
+                      React.createElement(
+                        "button",
+                        {
+                          type: "button",
+                          onClick: () => removeMention("product", mention.id),
+                          "aria-label": `Remove product ${mention.label}`,
+                        },
+                        "×"
+                      )
+                    )
+                  ),
+                ]
+              )
+            : null,
+          pendingVendor
+            ? React.createElement(
+                "div",
+                { className: "mention-helper", role: "alert" },
+                `Select a vendor for “${pendingVendor.query}”.`,
+                pendingVendor.status === "loading"
+                  ? " Loading suggestions…"
+                  : pendingVendor.suggestions.length
+                  ? React.createElement(
+                      "div",
+                      { className: "mention-tray", style: { marginTop: "6px" } },
+                      pendingVendor.suggestions.map((vendor) =>
+                        React.createElement(
+                          "button",
+                          {
+                            key: vendor.id,
+                            type: "button",
+                            className: "control-ghost",
+                            onClick: () => {
+                              const option = { id: vendor.id, label: vendor.name, type: "vendor" };
+                              if (pendingVendor.context) {
+                                applyMentionSelection(option, pendingVendor.context);
+                              } else {
+                                setVendorMentions((prev) => {
+                                  if (prev.some((entry) => entry.id === vendor.id)) {
+                                    return prev;
+                                  }
+                                  return [...prev, { id: vendor.id, label: vendor.name }];
+                                });
+                                setUploadVendor((prev) => (prev ? prev : vendor.name));
+                                setErrorBanner(null);
+                              }
+                              clearPendingVendor(pendingVendor.query);
+                            },
+                          },
+                          vendor.name
+                        )
+                      )
+                    )
+                  : " No matches found."
+              )
+            : null,
           React.createElement("textarea", {
+            ref: composerRef,
             placeholder: "Ask anything or drag files here. Use @vendor to scope offers.",
             value: composer,
-            onChange: (event) => setComposer(event.target.value),
+            onChange: handleComposerChange,
             onKeyDown: handleKeyDown,
             disabled: isSending,
           }),
+          mentionContext
+            ? React.createElement(
+                "div",
+                {
+                  className: "mention-popover",
+                  role: "listbox",
+                  "aria-label": mentionContext.type === "vendor" ? "Vendor suggestions" : "Product suggestions",
+                  style: {
+                    top: (composerRef.current ? composerRef.current.offsetTop : 0) + 6,
+                    left: (composerRef.current ? composerRef.current.offsetLeft : 0) + 12,
+                  },
+                },
+                React.createElement(
+                  "div",
+                  { className: "mention-popover-header" },
+                  mentionContext.type === "vendor" ? "Vendors" : "Products"
+                ),
+                mentionSuggestions.length
+                  ? mentionSuggestions.map((option, index) =>
+                      React.createElement(
+                        "button",
+                        {
+                          key: option.id,
+                          type: "button",
+                          className: "mention-option",
+                          "data-active": index === mentionHighlighted ? "true" : "false",
+                          role: "option",
+                          "aria-selected": index === mentionHighlighted,
+                          onMouseEnter: () => setMentionHighlighted(index),
+                          onMouseDown: (event) => {
+                            event.preventDefault();
+                            applyMentionSelection(option);
+                          },
+                        },
+                        option.label,
+                        option.subtitle ? React.createElement("span", null, option.subtitle) : null
+                      )
+                    )
+                  : React.createElement(
+                      "div",
+                      {
+                        className: "mention-option",
+                        role: "presentation",
+                        style: { cursor: "default" },
+                      },
+                      mentionContext.type === "product"
+                        ? "Type to search for products"
+                        : "Keep typing to refine vendors"
+                    )
+              )
+            : null,
           React.createElement(
             "div",
             { className: "composer-controls" },
@@ -1775,6 +3112,20 @@
               "Use AI normalization"
             ),
             React.createElement(
+              "label",
+              {
+                className: "control-ghost toggle-control",
+                title: "When enabled, press Enter to send. Shift+Enter always inserts a newline.",
+              },
+              React.createElement("input", {
+                type: "checkbox",
+                checked: enterSends,
+                onChange: (event) => setEnterSends(event.target.checked),
+                disabled: isSending,
+              }),
+              "Enter sends"
+            ),
+            React.createElement(
               "button",
               {
                 type: "button",
@@ -1795,25 +3146,134 @@
     }
 
     function DocumentSummaryMessage({ message }) {
+      const documents = Array.isArray(message.documents) ? message.documents : [];
       const chipSection =
-        message.documents && message.documents.length
+        documents.length
           ? React.createElement(
               "div",
               { className: "bundle-footer" },
-              message.documents.map((doc) =>
+              documents.map((doc) =>
                 React.createElement(
                   "span",
                   { key: doc.id, className: "doc-chip" },
-                  `${doc.file_name} • ${doc.status}`
+                  `${doc.file_name || "Document"} • ${doc.status || "unknown"}`
                 )
               )
             )
           : null;
 
+      const entries = Array.isArray(message.entries) ? message.entries : [];
+      const headerAlerts = [];
+      entries.forEach((entry) => {
+        if (!Array.isArray(entry.headerWarnings)) {
+          return;
+        }
+        entry.headerWarnings.forEach((warning) => {
+          if (!warning) return;
+          const normalized = String(warning).trim();
+          if (!normalized) return;
+          if (!headerAlerts.some((text) => text.toLowerCase() === normalized.toLowerCase())) {
+            headerAlerts.push(normalized);
+          }
+        });
+      });
+
+      const headerBanner =
+        headerAlerts.length
+          ? React.createElement(
+              "div",
+              { className: "doc-summary-warning", role: "alert" },
+              React.createElement("strong", null, "Check spreadsheet headers"),
+              headerAlerts.map((text, idx) => React.createElement("span", { key: idx }, text))
+            )
+          : null;
+
+      const formatSourceLabel = (value) => {
+        if (!value) return null;
+        return value
+          .split(/[_\s]+/)
+          .map((part) => (part ? part.charAt(0).toUpperCase() + part.slice(1) : ""))
+          .join(" ")
+          .trim();
+      };
+
       const entriesContent =
-        message.entries && message.entries.length
-          ? message.entries.map((entry) =>
-              React.createElement(
+        entries.length
+          ? entries.map((entry) => {
+              const offers = Array.isArray(entry.offers) ? entry.offers : [];
+              const offerList = offers.length
+                ? React.createElement(
+                    "ul",
+                    { className: "doc-summary-list" },
+                    offers.map((offer, index) => {
+                      const key = offer.id || `${entry.id}-${index}`;
+                      const detailParts = [];
+                      if (offer.price != null) {
+                        detailParts.push(formatCurrency(offer.price, offer.currency));
+                      } else if (offer.currency) {
+                        detailParts.push(offer.currency);
+                      }
+                      if (offer.quantity != null) {
+                        detailParts.push(`Qty ${offer.quantity}`);
+                      }
+                      if (offer.condition) {
+                        detailParts.push(offer.condition);
+                      }
+                      if (offer.location) {
+                        detailParts.push(offer.location);
+                      }
+                      const detailText = detailParts.join(" • ");
+                      const rawSource = typeof offer.source === "string" ? offer.source.trim() : "";
+                      const normalizedSource = rawSource.toLowerCase();
+                      const isLLM = normalizedSource === "llm_extractor" || normalizedSource === "llm";
+                      const isHeuristic =
+                        normalizedSource === "spreadsheet_heuristic" || normalizedSource === "heuristic";
+                      const offerClasses = ["doc-offer-item"];
+                      if (isLLM) {
+                        offerClasses.push("doc-offer-source-llm");
+                      } else if (isHeuristic) {
+                        offerClasses.push("doc-offer-source-heuristic");
+                      }
+                      let friendlySource = null;
+                      if (rawSource) {
+                        if (isLLM) {
+                          friendlySource = "LLM normalized";
+                        } else if (isHeuristic) {
+                          friendlySource = "Heuristic";
+                        } else {
+                          friendlySource = formatSourceLabel(rawSource);
+                        }
+                      }
+                      const badgeClass = isLLM
+                        ? "doc-offer-badge doc-offer-badge-llm"
+                        : isHeuristic
+                        ? "doc-offer-badge doc-offer-badge-heuristic"
+                        : "doc-offer-badge";
+                      return React.createElement(
+                        "li",
+                        { key, className: offerClasses.join(" ") },
+                        React.createElement(
+                          "div",
+                          { className: "doc-offer-title" },
+                          React.createElement("span", null, offer.product_name || "Unknown product"),
+                          friendlySource
+                            ? React.createElement("span", { className: badgeClass }, friendlySource)
+                            : null
+                        ),
+                        detailText
+                          ? React.createElement("span", { className: "doc-offer-details" }, detailText)
+                          : null
+                      );
+                    })
+                  )
+                : React.createElement(
+                    "p",
+                    { className: "doc-summary-empty" },
+                    entry.status === "processing"
+                      ? "Still processing — try again in a moment."
+                      : "No offers captured yet."
+                  );
+              return React.createElement(
                 "div",
                 { key: entry.id, className: "doc-summary" },
                 React.createElement(
@@ -1824,44 +3284,9 @@
                     ? React.createElement("span", null, `Status: ${entry.status}`)
                     : null
                 ),
-                entry.offers && entry.offers.length
-                  ? React.createElement(
-                      "ul",
-                      { className: "doc-summary-list" },
-                      entry.offers.map((offer, index) => {
-                        const key = offer.id || `${entry.id}-${index}`;
-                        const parts = [];
-                        if (offer.price != null) {
-                          parts.push(formatCurrency(offer.price, offer.currency));
-                        } else if (offer.currency) {
-                          parts.push(offer.currency);
-                        }
-                        if (offer.quantity != null) {
-                          parts.push(`Qty ${offer.quantity}`);
-                        }
-                        if (offer.condition) {
-                          parts.push(offer.condition);
-                        }
-                        if (offer.location) {
-                          parts.push(offer.location);
-                        }
-                        const details = parts.length ? ` — ${parts.join(" • ")}` : "";
-                        return React.createElement(
-                          "li",
-                          { key },
-                          `${offer.product_name || "Unknown product"}${details}`
-                        );
-                      })
-                    )
-                  : React.createElement(
-                      "p",
-                      { className: "doc-summary-empty" },
-                      entry.status === "processing"
-                        ? "Still processing — try again in a moment."
-                        : "No offers captured yet."
-                    )
-              )
-            )
+                offerList
+              );
+            })
           : React.createElement(
               "p",
               { className: "doc-summary-empty" },
@@ -1881,6 +3306,7 @@
           "div",
           { style: { display: "grid", gap: "12px" } },
           message.summary ? React.createElement("p", null, message.summary) : null,
+          headerBanner,
           entriesContent,
           chipSection
         )

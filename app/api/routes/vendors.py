@@ -15,9 +15,12 @@ from app.db import models
 router = APIRouter(prefix="/vendors", tags=["vendors"])
 
 
-class VendorSummary(BaseModel):
+class VendorListItem(BaseModel):
     id: UUID
     name: str
+
+
+class VendorSummary(VendorListItem):
     offer_count: int
 
 
@@ -25,37 +28,34 @@ class VendorDetail(VendorSummary):
     recent_offers: list[OfferOut]
 
 
-@router.get("", response_model=list[VendorSummary], summary="List vendors")
+@router.get("", response_model=list[VendorListItem], summary="List vendors")
 def list_vendors(
     session: Session = Depends(get_db),
     q: Optional[str] = Query(default=None, description="Search by vendor name"),
     limit: int = Query(default=50, ge=1, le=500),
     offset: int = Query(default=0, ge=0),
-) -> list[VendorSummary]:
+) -> list[VendorListItem]:
     statement = select(models.Vendor)
-    if q:
-        pattern = f"%{q.lower()}%"
-        statement = statement.where(func.lower(models.Vendor.name).like(pattern))
+    if q is not None:
+        normalized = q.strip()
+        if normalized:
+            pattern = f"%{normalized.lower()}%"
+            statement = statement.where(func.lower(models.Vendor.name).like(pattern))
 
-    statement = statement.order_by(models.Vendor.name).offset(offset).limit(limit)
+    statement = (
+        statement.order_by(func.lower(models.Vendor.name), models.Vendor.name)
+        .offset(offset)
+        .limit(limit)
+    )
     vendors = session.exec(statement).all()
 
     if not vendors:
         return []
 
-    vendor_ids = [vendor.id for vendor in vendors]
-    count_stmt = (
-        select(models.Offer.vendor_id, func.count(models.Offer.id))
-        .where(models.Offer.vendor_id.in_(vendor_ids))
-        .group_by(models.Offer.vendor_id)
-    )
-    counts = {vendor_id: count for vendor_id, count in session.exec(count_stmt).all()}
-
     return [
-        VendorSummary(
+        VendorListItem(
             id=vendor.id,
             name=vendor.name,
-            offer_count=counts.get(vendor.id, 0),
         )
         for vendor in vendors
     ]
@@ -100,7 +100,7 @@ def get_vendor(
         select(func.count(models.Offer.id))
         .where(models.Offer.vendor_id == vendor_id)
     )
-    offer_count = session.exec(count_stmt).one()
+    offer_count = int(session.exec(count_stmt).one())
 
     return VendorDetail(
         id=vendor.id,

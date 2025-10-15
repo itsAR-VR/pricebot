@@ -1,10 +1,15 @@
 from __future__ import annotations
 
 from datetime import datetime
-from typing import Any
+import platform
+from typing import Any, Iterable
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, HTTPException
+import fastapi
+import pydantic
+import sqlalchemy
+import sqlmodel
+from fastapi import APIRouter, Depends, HTTPException, Query
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field, field_validator, model_validator
 from sqlalchemy import func
@@ -14,8 +19,10 @@ from sqlmodel import Session, select
 from app.api.deps import get_db
 from app.api.routes.health import healthcheck as health_status
 from app.core.config import settings
+from app.core.log_buffer import buffer_limits, get_log_entries, get_tool_entries
 from app.db import models
 from app.services.chat import ChatLookupService
+from app.services.help_index import get_help_index
 
 router = APIRouter(prefix="/chat/tools", tags=["chat"])
 
@@ -365,6 +372,36 @@ class DiagnosticsIngestionWarning(BaseModel):
     messages: list[str]
 
 
+class BufferedLogEntry(BaseModel):
+    timestamp: datetime
+    level: str
+    logger: str
+    message: str
+    details: dict[str, Any] | None = None
+
+
+class BufferedToolCall(BaseModel):
+    timestamp: datetime
+    method: str
+    path: str
+    status: int
+    duration_ms: float
+    conversation_id: str | None = None
+
+
+class LogsResponse(BaseModel):
+    logs: list[BufferedLogEntry]
+    tool_calls: list[BufferedToolCall]
+    limits: dict[str, int]
+
+
+class DiagnosticsVersions(BaseModel):
+    python: str
+    packages: dict[str, str]
+    llm: dict[str, Any]
+    feature_flags: DiagnosticsFeatureFlags
+
+
 class DiagnosticsResponse(BaseModel):
     metadata: dict[str, str]
     health: dict[str, Any]
@@ -373,6 +410,27 @@ class DiagnosticsResponse(BaseModel):
     recent_offers: list[DiagnosticsOffer]
     feature_flags: DiagnosticsFeatureFlags
     ingestion_warnings: list[DiagnosticsIngestionWarning]
+    logs_tail: list[BufferedLogEntry] | None = None
+    versions: DiagnosticsVersions | None = None
+
+
+class HelpRequest(BaseModel):
+    query: str = Field(..., min_length=3, max_length=200)
+    limit: int = Field(3, ge=1, le=5)
+
+
+class HelpSource(BaseModel):
+    path: str
+    heading: str
+    snippet: str
+    score: float
+
+
+class HelpResponse(BaseModel):
+    query: str
+    answer: str
+    used_llm: bool
+    sources: list[HelpSource]
 
 
 def _coerce_messages(raw: Any) -> list[str]:
@@ -390,7 +448,13 @@ def _row_count(session: Session, model: type[Any]) -> int:
     return int(session.exec(count_statement).one())
 
 
-def _collect_diagnostics(session: Session) -> DiagnosticsResponse:
+def _collect_diagnostics(
+    session: Session,
+    *,
+    include: set[str] | None = None,
+    logs_limit: int = 25,
+) -> DiagnosticsResponse:
+    include_normalized = {item.lower() for item in include} if include else set()
     metadata = {"service": settings.app_name, "environment": settings.environment}
     health = health_status()
 
@@ -471,6 +535,15 @@ def _collect_diagnostics(session: Session) -> DiagnosticsResponse:
         environment=settings.environment,
     )
 
+    include_logs = "logs" in include_normalized and settings.environment.lower() != "production"
+    logs_tail = None
+    if include_logs:
+        logs_tail = _serialize_logs(limit=logs_limit).logs
+
+    versions: DiagnosticsVersions | None = None
+    if "versions" in include_normalized:
+        versions = _build_diagnostics_versions(feature_flags)
+
     return DiagnosticsResponse(
         metadata=metadata,
         health=health,
@@ -479,22 +552,140 @@ def _collect_diagnostics(session: Session) -> DiagnosticsResponse:
         recent_offers=recent_offers,
         feature_flags=feature_flags,
         ingestion_warnings=ingestion_warnings,
+        logs_tail=logs_tail,
+        versions=versions,
+    )
+
+
+def _parse_include_params(values: Iterable[str] | None) -> set[str]:
+    if values is None:
+        return set()
+
+    include: set[str] = set()
+    for raw_value in values:
+        if not raw_value:
+            continue
+        for part in raw_value.split(","):
+            normalized = part.strip().lower()
+            if normalized:
+                include.add(normalized)
+    return include
+
+
+def _build_diagnostics_versions(feature_flags: DiagnosticsFeatureFlags) -> DiagnosticsVersions:
+    packages = {
+        "fastapi": getattr(fastapi, "__version__", "unknown"),
+        "sqlmodel": getattr(sqlmodel, "__version__", "unknown"),
+        "sqlalchemy": getattr(sqlalchemy, "__version__", "unknown"),
+        "pydantic": getattr(pydantic, "__version__", "unknown"),
+    }
+    try:
+        from app.services.llm_extraction import OfferLLMExtractor  # noqa: WPS433 - local import to avoid circular import
+
+        default_model = getattr(OfferLLMExtractor, "DEFAULT_MODEL", "unknown")
+    except Exception:  # pragma: no cover - defensive
+        default_model = "unknown"
+    llm_info = {
+        "default_model": default_model,
+        "openai_enabled": feature_flags.enable_openai,
+    }
+    return DiagnosticsVersions(
+        python=platform.python_version(),
+        packages=packages,
+        llm=llm_info,
+        feature_flags=feature_flags,
     )
 
 
 @router.get("/diagnostics", response_model=DiagnosticsResponse)
-def get_diagnostics(session: Session = Depends(get_db)) -> DiagnosticsResponse:
-    return _collect_diagnostics(session)
+def get_diagnostics(
+    include: list[str] | None = Query(
+        default=None,
+        description="Optional extras to include (comma-separated: logs, versions)",
+    ),
+    logs_limit: int = Query(default=25, ge=1, le=200),
+    session: Session = Depends(get_db),
+) -> DiagnosticsResponse:
+    include_set = _parse_include_params(include)
+    return _collect_diagnostics(session, include=include_set, logs_limit=logs_limit)
 
 
 @router.get("/diagnostics/download", include_in_schema=False)
-def download_diagnostics(session: Session = Depends(get_db)) -> JSONResponse:
-    diagnostics = _collect_diagnostics(session)
+def download_diagnostics(
+    include: list[str] | None = Query(default=None),
+    logs_limit: int = Query(default=25, ge=1, le=200),
+    session: Session = Depends(get_db),
+) -> JSONResponse:
+    include_set = _parse_include_params(include)
+    diagnostics = _collect_diagnostics(session, include=include_set, logs_limit=logs_limit)
     payload = diagnostics.model_dump(mode="json")
     return JSONResponse(
         content=payload,
         headers={"Content-Disposition": 'attachment; filename="pricebot_diagnostics.json"'},
     )
+
+
+def _ensure_dev_environment() -> None:
+    if settings.environment.lower() == "production":
+        raise HTTPException(status_code=403, detail="Logs are unavailable in production")
+
+
+def _serialize_logs(limit: int | None = None) -> LogsResponse:
+    logs = [
+        BufferedLogEntry(
+            timestamp=entry.timestamp,
+            level=entry.level,
+            logger=entry.logger,
+            message=entry.message,
+            details=entry.details,
+        )
+        for entry in get_log_entries(limit=limit)
+    ]
+    tool_calls = [
+        BufferedToolCall(
+            timestamp=entry.timestamp,
+            method=entry.method,
+            path=entry.path,
+            status=entry.status,
+            duration_ms=entry.duration_ms,
+            conversation_id=entry.conversation_id,
+        )
+        for entry in get_tool_entries(limit=limit)
+    ]
+    return LogsResponse(logs=logs, tool_calls=tool_calls, limits=buffer_limits())
+
+
+@router.get("/logs", response_model=LogsResponse)
+def get_logs(limit: int | None = None) -> LogsResponse:
+    _ensure_dev_environment()
+    return _serialize_logs(limit)
+
+
+@router.get("/logs/download", include_in_schema=False)
+def download_logs(limit: int | None = None) -> JSONResponse:
+    _ensure_dev_environment()
+    payload = _serialize_logs(limit).model_dump(mode="json")
+    return JSONResponse(
+        content=payload,
+        headers={"Content-Disposition": 'attachment; filename="pricebot_logs.json"'},
+    )
+
+
+@router.post("/help", response_model=HelpResponse)
+def help_topics(request: HelpRequest) -> HelpResponse:
+    help_index = get_help_index()
+    matches = help_index.search(request.query, limit=request.limit)
+    answer, used_llm = help_index.generate_answer(request.query, matches)
+    sources = [
+        HelpSource(
+            path=match.path,
+            heading=match.heading,
+            snippet=match.snippet,
+            score=round(match.score, 4),
+        )
+        for match in matches
+    ]
+    return HelpResponse(query=request.query, answer=answer, used_llm=used_llm, sources=sources)
 
 
 __all__ = [

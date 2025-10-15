@@ -10,6 +10,7 @@ from sqlmodel import Session, select
 
 from app.api.deps import get_db
 from app.db import models
+from app.services.chat import ChatLookupService
 from app.api.routes.offers import OfferOut
 
 router = APIRouter(prefix="/products", tags=["products"])
@@ -25,8 +26,52 @@ class ProductSummary(BaseModel):
     offer_count: int
 
 
+class ProductSuggestItem(BaseModel):
+    id: UUID
+    canonical_name: str
+    model_number: str | None = None
+    match_source: str
+
+
 class ProductDetail(ProductSummary):
     recent_offers: list[OfferOut]
+
+
+@router.get("/suggest", response_model=list[ProductSuggestItem], summary="Suggest products for mentions")
+def suggest_products(
+    q: str = Query(
+        ...,
+        min_length=1,
+        max_length=200,
+        description="Search term for product suggestions",
+    ),
+    limit: int = Query(default=8, ge=1, le=25),
+    session: Session = Depends(get_db),
+) -> list[ProductSuggestItem]:
+    normalized_query = q.strip()
+    if not normalized_query:
+        raise HTTPException(status_code=422, detail="Query must not be blank")
+
+    service = ChatLookupService(session)
+    result_page = service.resolve_products(
+        normalized_query,
+        limit=limit,
+        offset=0,
+        include_total=False,
+    )
+
+    suggestions: list[ProductSuggestItem] = []
+    for match in result_page.matches:
+        suggestions.append(
+            ProductSuggestItem(
+                id=match.product.id,
+                canonical_name=match.product.canonical_name,
+                model_number=match.product.model_number,
+                match_source=match.match_source,
+            )
+        )
+
+    return suggestions
 
 
 @router.get("", response_model=list[ProductSummary], summary="List products")
@@ -111,7 +156,7 @@ def get_product(
         select(func.count(models.Offer.id))
         .where(models.Offer.product_id == product_id)
     )
-    offer_count = session.exec(count_stmt).one()
+    offer_count = int(session.exec(count_stmt).one())
 
     return ProductDetail(
         id=product.id,

@@ -1,16 +1,25 @@
-from contextlib import asynccontextmanager
 import logging
 import os
+from contextlib import asynccontextmanager
+from time import perf_counter
 
 from fastapi import FastAPI
+from fastapi import Request
 from fastapi.responses import RedirectResponse
 
+from app.core.config import settings
+from app.core.log_buffer import install_log_buffer, record_tool_call
+from app.db.session import init_db
 from app.api.routes import chat_tools, documents, health, offers, price_history, products, vendors
 from app.ui import views as operator_views
-from app.core.config import settings
-from app.db.session import init_db
 
 logger = logging.getLogger("pricebot.startup")
+
+install_log_buffer(
+    max_logs=settings.log_buffer_size,
+    max_tool_events=settings.log_tool_event_size,
+    file_path=settings.log_buffer_file,
+)
 
 
 @asynccontextmanager
@@ -54,3 +63,23 @@ def root() -> RedirectResponse:
 @app.get("/metadata", summary="Service metadata")
 def service_metadata() -> dict[str, str]:
     return {"service": settings.app_name, "environment": settings.environment}
+
+
+@app.middleware("http")
+async def capture_chat_tool_requests(request: Request, call_next):
+    start = perf_counter()
+    status_code: int = 500
+    try:
+        response = await call_next(request)
+        status_code = response.status_code
+        return response
+    finally:
+        if request.url.path.startswith("/chat/tools"):
+            duration_ms = (perf_counter() - start) * 1000.0
+            record_tool_call(
+                method=request.method,
+                path=request.url.path,
+                status=status_code,
+                duration_ms=duration_ms,
+                conversation_id=request.headers.get("x-conversation-id"),
+            )
