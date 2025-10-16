@@ -1234,6 +1234,10 @@
       "what is inside",
       "what are in",
       "what are these",
+      "what are the products",
+      "what are the items",
+      "products mentioned",
+      "mentioned here",
       "what is this sheet",
       "what's this sheet",
       "summary",
@@ -1245,9 +1249,11 @@
       "what is the price",
       "what quantity",
       "what quantities",
-    "what's listed",
-    "list the products",
-  ];
+      "what's listed",
+      "list the products",
+      "list products",
+      "list items",
+    ];
 
     const HELP_KEYWORDS = [
       "what is ai normalization",
@@ -2609,6 +2615,71 @@
             updateProgress(progressId, "format", "active", "Formatting answer…");
           }
 
+          // Fallback: if no best-price results and we have recent uploads, summarize document offers
+          if ((!bestPayload.results || bestPayload.results.length === 0) && resolvedDocuments.length > 0) {
+            const detailPayloads = await Promise.all(
+              resolvedDocuments.map(async (doc) => {
+                const response = await fetch(`${config.document}/${doc.id}`);
+                if (!response.ok) {
+                  throw new Error(`Failed to load document ${doc.file_name || doc.id}`);
+                }
+                return response.json();
+              })
+            );
+
+            const entries = detailPayloads.map((doc) => {
+              const metadata = doc && typeof doc.metadata === "object" && doc.metadata !== null ? doc.metadata : {};
+              const offers = Array.isArray(doc.offers)
+                ? doc.offers.map((offer) => {
+                    const normalized = { ...offer };
+                    const source = resolveOfferSource(offer, metadata);
+                    if (source) normalized.source = source;
+                    return normalized;
+                  })
+                : [];
+              return {
+                id: doc.id,
+                file_name: doc.file_name,
+                file_type: doc.file_type,
+                status: doc.status,
+                offers,
+                metadata,
+                headerWarnings: extractHeaderWarnings(metadata, doc.file_type),
+              };
+            });
+
+            const totalOffers = entries.reduce((sum, entry) => sum + entry.offers.length, 0);
+            const summary =
+              totalOffers > 0
+                ? `Found ${totalOffers} offer${totalOffers === 1 ? "" : "s"} across ${entries.length} document${
+                    entries.length === 1 ? "" : "s"
+                  }.`
+                : "Documents processed, but no offers were captured.";
+
+            const summaryMessage = {
+              id: uid("doc-summary"),
+              role: "assistant",
+              variant: "document_summary",
+              timestamp: new Date().toISOString(),
+              summary,
+              entries,
+              documents: resolvedDocuments.map((doc) => ({
+                id: doc.id,
+                file_name: doc.file_name,
+                file_type: doc.file_type,
+                status: doc.status,
+                metadata: doc && typeof doc.metadata === "object" && doc.metadata !== null ? doc.metadata : {},
+              })),
+            };
+            setMessages((prev) => [...prev, summaryMessage]);
+            if (hasStep("format")) {
+              updateProgress(progressId, "format", "done", "Answer ready.");
+            }
+            succeeded = true;
+            shouldResetUploads = shouldUploadAttachments;
+            return;
+          }
+
           const displayFilters = {};
           if (vendorName) {
             displayFilters.vendor = vendorName;
@@ -2789,7 +2860,7 @@
       return `${environment} mode`;
     }, [environment]);
 
-    const showDiagnosticsButton = Boolean(devMode && config.diagnostics_download);
+    const showDiagnosticsButton = Boolean(config.diagnostics_download);
 
     const handleDiagnosticsDownload = () => {
       if (!config.diagnostics_download) return;
@@ -3111,20 +3182,7 @@
               }),
               "Use AI normalization"
             ),
-            React.createElement(
-              "label",
-              {
-                className: "control-ghost toggle-control",
-                title: "When enabled, press Enter to send. Shift+Enter always inserts a newline.",
-              },
-              React.createElement("input", {
-                type: "checkbox",
-                checked: enterSends,
-                onChange: (event) => setEnterSends(event.target.checked),
-                disabled: isSending,
-              }),
-              "Enter sends"
-            ),
+            
             React.createElement(
               "button",
               {
