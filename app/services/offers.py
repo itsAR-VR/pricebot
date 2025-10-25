@@ -53,6 +53,22 @@ class OfferIngestionService:
             elif payload.raw_payload:
                 raw_payload_data = payload.raw_payload
 
+            # Dedup by source_whatsapp_message_id if present
+            source_whatsapp_message_id = None
+            if payload.raw_payload and payload.raw_payload.get("source_whatsapp_message_id"):
+                try:
+                    from uuid import UUID as _UUID
+                    source_whatsapp_message_id = _UUID(str(payload.raw_payload["source_whatsapp_message_id"]))
+                except Exception:
+                    source_whatsapp_message_id = None
+            if source_whatsapp_message_id is not None:
+                existing = self.session.exec(
+                    select(models.Offer).where(models.Offer.source_whatsapp_message_id == source_whatsapp_message_id)
+                ).first()
+                if existing:
+                    persisted_offers.append(existing)
+                    continue
+
             offer = models.Offer(
                 product_id=product.id,
                 vendor_id=vendor.id,
@@ -65,6 +81,7 @@ class OfferIngestionService:
                 notes=payload.notes,
                 raw_payload=raw_payload_data,
                 source_document_id=source_document.id if source_document else None,
+                source_whatsapp_message_id=source_whatsapp_message_id,
             )
             self.session.add(offer)
             self.session.flush()

@@ -70,6 +70,17 @@
     transform: translateY(-1px);
   }
 
+  .stale-banner {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    padding: 6px 10px;
+    border-radius: 8px;
+    background: rgba(239, 68, 68, 0.14);
+    color: #fecaca;
+    font-size: 12px;
+  }
+
   .status-pill {
     display: inline-flex;
     align-items: center;
@@ -783,6 +794,12 @@
     const devMode = {{ dev_mode | tojson }};
     const environment = {{ environment | tojson }};
     const { useEffect, useMemo, useRef, useState } = React;
+    const [hasBestPricePayload, setHasBestPricePayload] = useState(false);
+    const lastBestPricePayloadRef = useRef(null);
+    const lastBestPriceResultRef = useRef(null);
+    const [includeAlternates, setIncludeAlternates] = useState(true);
+    const [hasDocSummary, setHasDocSummary] = useState(false);
+    const lastDocSummaryRowsRef = useRef([]);
 
     function uid(prefix = "id") {
       return `${prefix}-${Math.random().toString(36).slice(2)}-${Date.now().toString(36)}`;
@@ -821,6 +838,24 @@
       if (diffHours < 24) return `${diffHours} hr${diffHours === 1 ? "" : "s"} ago`;
       const diffDays = Math.round(diffHours / 24);
       return `${diffDays} day${diffDays === 1 ? "" : "s"} ago`;
+    }
+
+    function isStale(isoString, days = 7) {
+      if (!isoString) return false;
+      const date = new Date(isoString);
+      if (Number.isNaN(date.getTime())) return false;
+      const diffMs = Date.now() - date.getTime();
+      const diffDays = diffMs / (1000 * 60 * 60 * 24);
+      return diffDays > days;
+    }
+
+    function triggerFilePicker() {
+      const input = document.querySelector('.composer input[type="file"]');
+      if (input && typeof input.click === 'function') {
+        input.click();
+      }
+      const composer = document.querySelector('.composer textarea');
+      if (composer) composer.scrollIntoView({ behavior: 'smooth', block: 'center' });
     }
 
     function normalizeId(value) {
@@ -1427,6 +1462,27 @@
           ? React.createElement(
               "div",
               { className: "best-offer" },
+              isStale(bundle.best_offer.captured_at)
+                ? React.createElement(
+                    "div",
+                    { className: "offer-row" },
+                    React.createElement(
+                      "span",
+                      { className: "stale-banner" },
+                      "Data might be stale — ",
+                      React.createElement(
+                        "button",
+                        {
+                          type: "button",
+                          className: "diagnostics-btn",
+                          style: { padding: '6px 10px' },
+                          onClick: () => triggerFilePicker(),
+                        },
+                        "Upload new sheet"
+                      )
+                    )
+                  )
+                : null,
               React.createElement(
                 "div",
                 { className: "offer-row" },
@@ -1491,6 +1547,9 @@
                     React.createElement("span", null, `Captured ${relativeTime(offer.captured_at)}`),
                     offer.quantity != null
                       ? React.createElement("span", null, `Qty ${offer.quantity}`)
+                      : null,
+                    isStale(offer.captured_at)
+                      ? React.createElement("span", { className: "inline-badge" }, "Stale")
                       : null
                   )
                 )
@@ -2594,20 +2653,25 @@
             condition: null,
             location: null,
           };
+          const bestPricePayload = {
+            query: queryForTools,
+            limit: 5,
+            offset: 0,
+            filters,
+          };
           const bestPriceResponse = await fetch(config.best_price, {
             method: "POST",
             headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({
-              query: queryForTools,
-              limit: 5,
-              offset: 0,
-              filters,
-            }),
+            body: JSON.stringify(bestPricePayload),
           });
           if (!bestPriceResponse.ok) {
             throw new Error(`Best price search failed (${bestPriceResponse.status})`);
           }
           const bestPayload = await bestPriceResponse.json();
+          lastBestPricePayloadRef.current = bestPricePayload;
+          setHasBestPricePayload(true);
+          lastBestPriceResultRef.current = bestPayload;
+          setHasDocSummary(false);
           if (hasStep("best_price")) {
             updateProgress(progressId, "best_price", "done", "Offers retrieved.");
           }
@@ -2655,6 +2719,23 @@
                     entries.length === 1 ? "" : "s"
                   }.`
                 : "Documents processed, but no offers were captured.";
+
+            const summaryRows = entries.flatMap((entry) =>
+              entry.offers.map((o) => ({
+                document_id: entry.id,
+                file_name: entry.file_name,
+                product_name: o.product_name,
+                vendor_name: o.vendor_name,
+                price: o.price,
+                currency: o.currency,
+                captured_at: o.captured_at,
+                condition: o.condition,
+                location: o.location,
+                quantity: o.quantity,
+              }))
+            );
+            lastDocSummaryRowsRef.current = summaryRows;
+            setHasDocSummary(summaryRows.length > 0);
 
             const summaryMessage = {
               id: uid("doc-summary"),
@@ -2861,10 +2942,79 @@
     }, [environment]);
 
     const showDiagnosticsButton = Boolean(config.diagnostics_download);
+    const showLogsButton = Boolean(config.logs_download) && devMode;
 
     const handleDiagnosticsDownload = () => {
       if (!config.diagnostics_download) return;
       window.open(config.diagnostics_download, "_blank", "noopener");
+    };
+
+    const handleLogsDownload = () => {
+      if (!config.logs_download) return;
+      window.open(config.logs_download, "_blank", "noopener");
+    };
+
+    const handleExportCSV = async () => {
+      if (!config.export_best_price || !lastBestPricePayloadRef.current) return;
+      try {
+        const response = await fetch(config.export_best_price, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ ...lastBestPricePayloadRef.current, include_alternates: includeAlternates }),
+        });
+        if (!response.ok) throw new Error(`Export failed (${response.status})`);
+        const blob = await response.blob();
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement("a");
+        a.href = url;
+        a.download = "best_offers.csv";
+        document.body.appendChild(a);
+        a.click();
+        a.remove();
+        URL.revokeObjectURL(url);
+      } catch (err) {
+        console.error("CSV export failed", err);
+      }
+    };
+
+    const handleCopyOffersJSON = async () => {
+      try {
+        if (!lastBestPriceResultRef.current) return;
+        await navigator.clipboard.writeText(JSON.stringify(lastBestPriceResultRef.current, null, 2));
+      } catch (err) {
+        console.error("Copy offers JSON failed", err);
+      }
+    };
+
+    const handleDownloadSummaryCSV = () => {
+      const rows = lastDocSummaryRowsRef.current || [];
+      if (!rows.length) return;
+      const header = [
+        "document_id","file_name","product_name","vendor_name","price","currency","captured_at","condition","location","quantity"
+      ];
+      const lines = [header.join(",")].concat(
+        rows.map((r) => [
+          r.document_id || "",
+          r.file_name || "",
+          r.product_name || "",
+          r.vendor_name || "",
+          r.price != null ? r.price : "",
+          r.currency || "",
+          r.captured_at || "",
+          r.condition || "",
+          r.location || "",
+          r.quantity != null ? r.quantity : "",
+        ].map((v) => String(v).replaceAll('"', '""')).map((v) => /[,"]/.test(v) ? `"${v}"` : v).join(","))
+      );
+      const blob = new Blob([lines.join("\n")], { type: "text/csv;charset=utf-8" });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = "document_offers.csv";
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      URL.revokeObjectURL(url);
     };
 
       return React.createElement(
@@ -2886,6 +3036,9 @@
                 "Attach vendor artefacts, ask natural questions, and track tool calls live."
               )
             ),
+            React.createElement(
+              React.Fragment,
+              null,
             showDiagnosticsButton
               ? React.createElement(
                   "button",
@@ -2896,7 +3049,71 @@
                   },
                   "Download diagnostics"
                 )
-              : null
+              : null,
+            hasBestPricePayload
+              ? React.createElement(
+                  "label",
+                  {
+                    className: "diagnostics-btn",
+                    style: { marginLeft: "8px", display: "inline-flex", alignItems: "center", gap: "8px" },
+                  },
+                  React.createElement("input", {
+                    type: "checkbox",
+                    checked: includeAlternates,
+                    onChange: (e) => setIncludeAlternates(e.target.checked),
+                  }),
+                  "Include alternates"
+                )
+              : null,
+            config.export_best_price && hasBestPricePayload
+              ? React.createElement(
+                  "button",
+                  {
+                    type: "button",
+                    className: "diagnostics-btn",
+                    style: { marginLeft: "8px" },
+                    onClick: handleExportCSV,
+                  },
+                  "Download offers CSV"
+                )
+              : null,
+              hasBestPricePayload
+                ? React.createElement(
+                    "button",
+                    {
+                      type: "button",
+                      className: "diagnostics-btn",
+                      style: { marginLeft: "8px" },
+                      onClick: handleCopyOffersJSON,
+                    },
+                    "Copy offers JSON"
+                  )
+                : null,
+              hasDocSummary
+                ? React.createElement(
+                    "button",
+                    {
+                      type: "button",
+                      className: "diagnostics-btn",
+                      style: { marginLeft: "8px" },
+                      onClick: handleDownloadSummaryCSV,
+                    },
+                    "Download summary CSV"
+                  )
+                : null,
+              showLogsButton
+                ? React.createElement(
+                    "button",
+                    {
+                      type: "button",
+                      className: "diagnostics-btn",
+                      style: { marginLeft: "8px" },
+                      onClick: handleLogsDownload,
+                    },
+                    "Download logs"
+                  )
+                : null
+            )
           ),
           React.createElement(
             "div",

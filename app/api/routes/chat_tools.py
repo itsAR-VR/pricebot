@@ -10,7 +10,7 @@ import pydantic
 import sqlalchemy
 import sqlmodel
 from fastapi import APIRouter, Depends, HTTPException, Query
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, Response
 from pydantic import BaseModel, Field, field_validator, model_validator
 from sqlalchemy import func
 from sqlalchemy.orm import selectinload
@@ -691,3 +691,98 @@ def help_topics(request: HelpRequest) -> HelpResponse:
 __all__ = [
     "router",
 ]
+
+
+class BestPriceExportRequest(BestPriceRequest):
+    include_alternates: bool = True
+
+
+@router.post("/offers/export", summary="Export best price results as CSV", include_in_schema=False)
+def export_best_price_csv(payload: BestPriceExportRequest, session: Session = Depends(get_db)) -> Response:
+    """Re-run the best-price search and return a CSV of results for download."""
+    service = ChatLookupService(session)
+
+    if payload.filters.vendor_id:
+        vendor = session.get(models.Vendor, payload.filters.vendor_id)
+        if not vendor:
+            raise HTTPException(status_code=404, detail="Vendor not found")
+
+    result_page = service.resolve_products(
+        payload.query,
+        limit=payload.limit,
+        offset=payload.offset,
+        include_total=False,
+    )
+
+    if not result_page.matches:
+        return Response(
+            content="product_name,is_best,vendor,price,currency,captured_at,condition,location,quantity,source_file\n",
+            media_type="text/csv",
+            headers={"Content-Disposition": 'attachment; filename="best_offers.csv"'},
+        )
+
+    bundles = service.fetch_best_offers(
+        [match.product.id for match in result_page.matches],
+        vendor_id=payload.filters.vendor_id,
+        condition=payload.filters.condition,
+        location=payload.filters.location,
+        max_offers=payload.limit,
+        min_price=payload.filters.min_price,
+        max_price=payload.filters.max_price,
+        captured_since=payload.filters.captured_since,
+    )
+
+    import csv
+    import io
+
+    buf = io.StringIO()
+    writer = csv.writer(buf)
+    writer.writerow(
+        [
+            "product_id",
+            "product_name",
+            "is_best",
+            "vendor_id",
+            "vendor",
+            "price",
+            "currency",
+            "captured_at",
+            "condition",
+            "location",
+            "quantity",
+            "source_document_id",
+            "source_file",
+        ]
+    )
+
+    for bundle in bundles:
+        offers = bundle.offers
+        for idx, offer in enumerate(offers):
+            is_best = idx == 0
+            if not payload.include_alternates and not is_best:
+                continue
+            source_file = offer.source_document.file_name if offer.source_document else None
+            writer.writerow(
+                [
+                    str(bundle.product.id),
+                    bundle.product.canonical_name,
+                    "yes" if is_best else "no",
+                    str(offer.vendor.id) if offer.vendor else "",
+                    offer.vendor.name if offer.vendor else "",
+                    offer.price,
+                    offer.currency,
+                    offer.captured_at.isoformat() if offer.captured_at else "",
+                    offer.condition or "",
+                    offer.location or "",
+                    offer.quantity if offer.quantity is not None else "",
+                    str(offer.source_document.id) if offer.source_document else "",
+                    source_file or "",
+                ]
+            )
+
+    content = buf.getvalue()
+    return Response(
+        content=content,
+        media_type="text/csv",
+        headers={"Content-Disposition": 'attachment; filename="best_offers.csv"'},
+    )

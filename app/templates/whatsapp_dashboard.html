@@ -1,0 +1,43 @@
+{% extends "base.html" %}
+{% block content %}
+<div class="header-row">
+  <h2>WhatsApp Chats</h2>
+  <a class="refresh-btn" href="/admin/whatsapp">Refresh</a>
+  <a class="refresh-btn" href="/admin/documents">Documents</a>
+  <a class="refresh-btn" href="/chat">Chat Tools</a>
+  <a class="refresh-btn" href="/upload">Upload</a>
+  <a class="refresh-btn" href="/chat/tools/diagnostics/download" target="_blank" rel="noopener">Diagnostics</a>
+  <a class="refresh-btn" href="/chat/tools/logs/download" target="_blank" rel="noopener">Logs</a>
+  <a class="refresh-btn" href="/documents/templates/vendor-price">Template</a>
+</div>
+
+{% if chats %}
+<table>
+  <thead>
+    <tr>
+      <th>Chat ID</th>
+      <th>Title</th>
+      <th>Last Message</th>
+      <th>Messages</th>
+      <th></th>
+    </tr>
+  </thead>
+  <tbody>
+    {% for c in chats %}
+    <tr>
+      <td>{{ c.id }}</td>
+      <td>{{ c.title }}</td>
+      <td>{{ c.last_message_at }}</td>
+      <td>{{ c.count }}</td>
+      <td>
+        <a class="details-link" href="/admin/whatsapp/{{ c.id }}">View</a>
+      </td>
+    </tr>
+    {% endfor %}
+  </tbody>
+</table>
+{% else %}
+<div class="empty-state">No WhatsApp chats captured yet.</div>
+{% endif %}
+{% endblock %}
+

@@ -446,17 +446,13 @@ async def upload_document(
                 }
             )
 
-    if not errors and len(results) == 1:
-        return results[0]
-
     if errors and not results:
         aggregated = "; ".join(f"{err['filename']}: {err['detail']}" for err in errors)
         raise HTTPException(status_code=500, detail=f"Processing failed: {aggregated}")
 
     status = "success" if not errors else "partial_success"
-    message = "Processed 0 document(s)"
-    if results:
-        message = f"Processed {len(results)} document(s)"
+    message = f"Processed {len(results)} document(s)" if results else "Processed 0 document(s)"
+    offers_total = sum(int(item.get("offers_count", 0)) for item in results) if results else 0
 
     return {
         "status": status,
@@ -465,6 +461,8 @@ async def upload_document(
         "failed_count": len(errors),
         "processed": results,
         "errors": errors,
+        # Convenience for single-file flows/tests
+        "offers_count": offers_total,
     }
 
 

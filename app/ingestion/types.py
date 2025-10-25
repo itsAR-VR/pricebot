@@ -1,6 +1,6 @@
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
-from typing import Any
+from typing import Any, Dict, List, Optional
 
 
 def now_utc() -> datetime:
@@ -9,7 +9,7 @@ def now_utc() -> datetime:
     return datetime.now(timezone.utc).replace(tzinfo=None)
 
 
-@dataclass(slots=True)
+@dataclass
 class RawOffer:
     """Represents a normalized offer row prior to persistence."""
 
@@ -17,21 +17,21 @@ class RawOffer:
     product_name: str
     price: float
     currency: str = "USD"
-    quantity: int | None = None
-    condition: str | None = None
-    sku: str | None = None
-    upc: str | None = None
-    model_number: str | None = None
-    warehouse: str | None = None
+    quantity: Optional[int] = None
+    condition: Optional[str] = None
+    sku: Optional[str] = None
+    upc: Optional[str] = None
+    model_number: Optional[str] = None
+    warehouse: Optional[str] = None
     captured_at: datetime = field(default_factory=now_utc)
-    notes: str | None = None
-    raw_payload: dict[str, Any] | None = None
+    notes: Optional[str] = None
+    raw_payload: Optional[Dict[str, Any]] = None
 
 
-@dataclass(slots=True)
+@dataclass
 class IngestionResult:
-    offers: list[RawOffer]
-    errors: list[str] = field(default_factory=list)
+    offers: List[RawOffer]
+    errors: List[str] = field(default_factory=list)
 
     @property
     def success(self) -> bool:

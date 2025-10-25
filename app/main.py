@@ -6,11 +6,13 @@ from time import perf_counter
 from fastapi import FastAPI
 from fastapi import Request
 from fastapi.responses import RedirectResponse
+from fastapi.middleware.cors import CORSMiddleware
 
 from app.core.config import settings
 from app.core.log_buffer import install_log_buffer, record_tool_call
 from app.db.session import init_db
 from app.api.routes import chat_tools, documents, health, offers, price_history, products, vendors
+from app.api.routes import integrations_whatsapp
 from app.ui import views as operator_views
 
 logger = logging.getLogger("pricebot.startup")
@@ -43,6 +45,25 @@ async def lifespan(_: FastAPI):
 
 app = FastAPI(title=settings.app_name, lifespan=lifespan)
 
+# CORS: allow-all in dev; restrict in prod unless explicitly configured
+env_lower = settings.environment.lower()
+if settings.cors_allow_all and env_lower not in {"prod", "production"}:
+    app.add_middleware(
+        CORSMiddleware,
+        allow_origins=["*"],
+        allow_credentials=False,
+        allow_methods=["*"],
+        allow_headers=["*"]
+    )
+elif settings.cors_allowed_origins:
+    app.add_middleware(
+        CORSMiddleware,
+        allow_origins=settings.cors_allowed_origins,
+        allow_credentials=False,
+        allow_methods=["*"],
+        allow_headers=["*"]
+    )
+
 app.include_router(health.router)
 app.include_router(offers.router)
 app.include_router(products.router)
@@ -53,6 +74,8 @@ app.include_router(chat_tools.router)
 app.include_router(operator_views.router)
 app.include_router(operator_views.upload_router)
 app.include_router(operator_views.chat_router)
+app.include_router(operator_views.whatsapp_router)
+app.include_router(integrations_whatsapp.router)
 
 
 @app.get("/", include_in_schema=False)

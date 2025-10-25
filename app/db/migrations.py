@@ -14,7 +14,7 @@ def run_schema_migrations(engine: Engine) -> None:
 
     inspector = inspect(engine)
     table_names = set(inspector.get_table_names())
-    relevant_tables = {"source_documents", "offers"} & table_names
+    relevant_tables = {"source_documents", "offers", "whatsapp_chats"} & table_names
     if not relevant_tables:
         return
 
@@ -74,6 +74,21 @@ def run_schema_migrations(engine: Engine) -> None:
                 if "source_document_id" not in columns:
                     statement = (
                         f"ALTER TABLE offers ADD COLUMN source_document_id {_uuid_type()} NULL"
+                    )
+                    logger.info("Applying migration: %s", statement)
+                    connection.execute(text(statement))
+                if "source_whatsapp_message_id" not in columns:
+                    statement = (
+                        f"ALTER TABLE offers ADD COLUMN source_whatsapp_message_id {_uuid_type()} NULL"
+                    )
+                    logger.info("Applying migration: %s", statement)
+                    connection.execute(text(statement))
+
+            if "whatsapp_chats" in table_names:
+                columns = {col["name"] for col in inspector.get_columns("whatsapp_chats")}
+                if "last_extracted_at" not in columns:
+                    statement = (
+                        f"ALTER TABLE whatsapp_chats ADD COLUMN last_extracted_at {_timestamp_type()} NULL"
                     )
                     logger.info("Applying migration: %s", statement)
                     connection.execute(text(statement))

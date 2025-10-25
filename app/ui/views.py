@@ -10,6 +10,7 @@ from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.responses import HTMLResponse
 from fastapi.templating import Jinja2Templates
 from sqlmodel import Session, select
+from sqlalchemy import func
 
 from app.api.deps import get_db
 from app.api.routes.offers import OfferOut
@@ -19,6 +20,7 @@ from app.db import models
 router = APIRouter(prefix="/admin", tags=["operator"], include_in_schema=False)
 upload_router = APIRouter(tags=["upload"], include_in_schema=False)
 chat_router = APIRouter(tags=["chat"], include_in_schema=False)
+whatsapp_router = APIRouter(prefix="/admin/whatsapp", tags=["operator"], include_in_schema=False)
 
 _templates = Jinja2Templates(directory=str(Path(__file__).resolve().parent.parent / "templates"))
 
@@ -54,6 +56,9 @@ async def chat_page(request: Request) -> HTMLResponse:
             "template_download": "/documents/templates/vendor-price",
             "diagnostics": "/chat/tools/diagnostics",
             "diagnostics_download": "/chat/tools/diagnostics/download",
+            "logs": "/chat/tools/logs",
+            "logs_download": "/chat/tools/logs/download",
+            "export_best_price": "/chat/tools/offers/export",
         },
         "environment": settings.environment,
         "dev_mode": is_dev_mode,
@@ -153,3 +158,63 @@ def _fmt(value: Optional[datetime]) -> str:
     if not value:
         return "-"
     return value.strftime("%Y-%m-%d %H:%M")
+
+
+@whatsapp_router.get("", response_class=HTMLResponse)
+async def whatsapp_dashboard(request: Request, session: Session = Depends(get_db)) -> HTMLResponse:
+    chats = session.exec(select(models.WhatsAppChat)).all()
+    rows: list[dict] = []
+    for chat in chats:
+        last = session.exec(
+            select(models.WhatsAppMessage)
+            .where(models.WhatsAppMessage.chat_id == chat.id)
+            .order_by(models.WhatsAppMessage.observed_at.desc())
+            .limit(1)
+        ).first()
+        count = session.exec(
+            select(func.count()).select_from(models.WhatsAppMessage).where(models.WhatsAppMessage.chat_id == chat.id)
+        ).one()
+        rows.append({
+            "id": chat.id,
+            "title": chat.title,
+            "last_message_at": _fmt(last.observed_at) if last else "-",
+            "count": count,
+        })
+
+    context = {
+        "request": request,
+        "title": "WhatsApp Chats",
+        "chats": rows,
+    }
+    return _templates.TemplateResponse(request, "whatsapp_dashboard.html", context)
+
+
+@whatsapp_router.get("/{chat_id}", response_class=HTMLResponse)
+async def whatsapp_chat_detail(request: Request, chat_id: UUID, session: Session = Depends(get_db)) -> HTMLResponse:
+    chat = session.get(models.WhatsAppChat, chat_id)
+    if not chat:
+        raise HTTPException(status_code=404, detail="Chat not found")
+
+    messages = session.exec(
+        select(models.WhatsAppMessage)
+        .where(models.WhatsAppMessage.chat_id == chat.id)
+        .order_by(models.WhatsAppMessage.observed_at.desc())
+        .limit(200)
+    ).all()
+
+    rows = [
+        {
+            "observed_at": _fmt(m.observed_at),
+            "sender": m.sender_name or ("You" if m.is_outgoing else "Unknown"),
+            "text": m.text,
+        }
+        for m in messages
+    ]
+
+    context = {
+        "request": request,
+        "title": f"Chat: {chat.title}",
+        "chat": {"id": chat.id, "title": chat.title},
+        "messages": rows,
+    }
+    return _templates.TemplateResponse(request, "whatsapp_chat_detail.html", context)

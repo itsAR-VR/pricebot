@@ -1,13 +1,14 @@
 from functools import lru_cache
 import os
 from pathlib import Path
+from typing import Optional, List
 
 from pydantic import field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 import logging
 
 
-def _normalize_database_url(url: str | None) -> str | None:
+def _normalize_database_url(url: Optional[str]) -> Optional[str]:
     """Ensure postgres URLs use the psycopg v3 dialect."""
 
     if not url:
@@ -60,7 +61,7 @@ class Settings(BaseSettings):
     )
 
     database_url: str = _default_database_url()
-    alembic_database_url: str | None = None
+    alembic_database_url: Optional[str] = None
 
     default_currency: str = "USD"
     ingestion_storage_dir: Path = Path(
@@ -70,23 +71,30 @@ class Settings(BaseSettings):
     )
     log_buffer_size: int = 500
     log_tool_event_size: int = 200
-    log_buffer_file: Path | None = None
+    log_buffer_file: Optional[Path] = None
 
     enable_openai: bool = False
-    openai_api_key: str | None = None
+    openai_api_key: Optional[str] = None
+
+    # Ingest settings
+    whatsapp_ingest_token: Optional[str] = None
+
+    # CORS settings (kept simple for now; default open for local/dev)
+    cors_allow_all: bool = True
+    cors_allowed_origins: List[str] = []
 
     # Pydantic v2: configuration is provided via `model_config` above
 
     @field_validator("database_url", "alembic_database_url", mode="before")
     @classmethod
-    def _coerce_database_url(cls, value: str | None) -> str | None:
+    def _coerce_database_url(cls, value: Optional[str]) -> Optional[str]:
         """Ensure SQLAlchemy uses the psycopg v3 driver on postgres URLs."""
 
         return _normalize_database_url(value)
 
     @field_validator("log_buffer_file", mode="before")
     @classmethod
-    def _coerce_log_buffer_file(cls, value: str | None) -> Path | None:
+    def _coerce_log_buffer_file(cls, value: Optional[str]) -> Optional[Path]:
         if value in (None, "", "None"):
             return None
         return Path(value)

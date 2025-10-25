@@ -249,6 +249,46 @@ def test_search_best_price_returns_best_offer(session):
     app.dependency_overrides.pop(get_db, None)
 
 
+def test_export_best_price_csv(session):
+    vendor = models.Vendor(name="Vendor Y")
+    product = models.Product(canonical_name="Exportable Product")
+    document = models.SourceDocument(
+        file_name="export.xlsx",
+        file_type="spreadsheet",
+        storage_path="/tmp/export.xlsx",
+        status="processed",
+    )
+    session.add_all([vendor, product, document])
+    session.flush()
+
+    offer = models.Offer(
+        product_id=product.id,
+        vendor_id=vendor.id,
+        source_document_id=document.id,
+        price=123.45,
+        currency="USD",
+        captured_at=datetime.now(timezone.utc),
+    )
+    session.add(offer)
+    session.commit()
+
+    app.dependency_overrides[get_db] = _override_get_db(session)
+    client = TestClient(app)
+
+    response = client.post(
+        "/chat/tools/offers/export",
+        json={"query": "Exportable", "limit": 5, "offset": 0, "filters": {}},
+    )
+    assert response.status_code == 200
+    assert response.headers["content-type"].startswith("text/csv")
+    content = response.text
+    assert "product_name" in content.splitlines()[0]
+    assert "Exportable Product" in content
+    assert "Vendor Y" in content
+    assert "123.45" in content
+    app.dependency_overrides.pop(get_db, None)
+
+
 def test_resolve_products_rejects_blank_query(session):
     app.dependency_overrides[get_db] = _override_get_db(session)
     client = TestClient(app)

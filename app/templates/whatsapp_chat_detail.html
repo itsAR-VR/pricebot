@@ -1,0 +1,46 @@
+{% extends "base.html" %}
+{% block content %}
+<div class="header-row">
+  <h2>{{ chat.title }}</h2>
+  <a class="refresh-btn" href="/admin/whatsapp/{{ chat.id }}">Refresh</a>
+  <a class="refresh-btn" href="/admin/whatsapp">Back</a>
+  <button class="refresh-btn" onclick="extractDeals()">Extract All</button>
+  <button class="refresh-btn" onclick="extractLatest()">Extract Latest</button>
+</div>
+
+<div id="result" class="result"></div>
+
+<table>
+  <thead>
+    <tr>
+      <th>Time</th>
+      <th>Sender</th>
+      <th>Text</th>
+    </tr>
+  </thead>
+  <tbody>
+    {% for m in messages %}
+    <tr>
+      <td>{{ m.observed_at }}</td>
+      <td>{{ m.sender }}</td>
+      <td style="white-space: pre-wrap">{{ m.text }}</td>
+    </tr>
+    {% endfor %}
+  </tbody>
+</table>
+
+<script>
+async function extractDeals() {
+  const res = await fetch('/integrations/whatsapp/chats/{{ chat.id }}/extract', { method: 'POST' });
+  const data = await res.json();
+  const el = document.getElementById('result');
+  el.textContent = `Extracted offers: ${data.offers}, warnings: ${data.warnings}`;
+}
+async function extractLatest() {
+  const res = await fetch('/integrations/whatsapp/chats/{{ chat.id }}/extract-latest', { method: 'POST' });
+  const data = await res.json();
+  const el = document.getElementById('result');
+  el.textContent = `Extracted latest offers: ${data.offers}, warnings: ${data.warnings}`;
+}
+</script>
+{% endblock %}
