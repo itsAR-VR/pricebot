@@ -63,6 +63,18 @@ class DocumentExtractionProcessor(BaseIngestionProcessor):
                 custom_instructions = context.get("llm_instructions") or ""
                 extra_instructions = f"{base_instructions} {custom_instructions}".strip()
 
+                media_type = context.get("media_type")
+                media_caption = context.get("media_caption")
+                if media_type:
+                    extra_instructions = (
+                        f"This attachment was sent through WhatsApp as a {media_type}. "
+                        f"{extra_instructions}"
+                    ).strip()
+                if media_caption:
+                    extra_instructions = (
+                        f"{extra_instructions} Caption/notes from the sender: {media_caption}"
+                    ).strip()
+
                 offers, warnings = llm.extract_offers_from_lines(
                     lines,
                     context=ExtractionContext(
@@ -84,7 +96,8 @@ class DocumentExtractionProcessor(BaseIngestionProcessor):
                         len(offers),
                         file_path.name,
                     )
-                    return IngestionResult(offers=offers, errors=warnings)
+                    enriched = self._apply_context_metadata(offers, context)
+                    return IngestionResult(offers=enriched, errors=warnings)
                 logger.warning(
                     "LLM normalization returned no offers for document %s; falling back to heuristics",
                     file_path.name,
@@ -96,6 +109,7 @@ class DocumentExtractionProcessor(BaseIngestionProcessor):
             vendor_name=default_vendor,
             default_currency=default_currency,
         )
+        offers = self._apply_context_metadata(offers, context)
 
         combined_errors = llm_errors + errors
         if not offers and not combined_errors:
@@ -204,6 +218,34 @@ class DocumentExtractionProcessor(BaseIngestionProcessor):
             
         except Exception as e:
             raise RuntimeError(f"GPT-5 OCR failed: {str(e)}") from e
+
+    def _apply_context_metadata(self, offers: list[RawOffer], context: dict[str, Any]) -> list[RawOffer]:
+        if not offers:
+            return offers
+
+        message_id = context.get("source_whatsapp_message_id")
+        media_caption = context.get("media_caption")
+        media_type = context.get("media_type")
+
+        for offer in offers:
+            payload = dict(offer.raw_payload or {})
+            if message_id:
+                payload["source_whatsapp_message_id"] = message_id
+                payload.setdefault("source", "whatsapp_media")
+            if media_caption:
+                captions = payload.get("media_captions")
+                if isinstance(captions, list):
+                    if media_caption not in captions:
+                        captions.append(media_caption)
+                elif captions:
+                    if captions != media_caption:
+                        payload["media_captions"] = [captions, media_caption]
+                else:
+                    payload["media_captions"] = [media_caption]
+            if media_type and not payload.get("media_type"):
+                payload["media_type"] = media_type
+            offer.raw_payload = payload or None
+        return offers
 
 
 registry.register(DocumentExtractionProcessor())

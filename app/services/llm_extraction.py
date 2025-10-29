@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 import logging
 from dataclasses import dataclass
+import sys
 from typing import Any, Sequence
 
 from app.core.config import settings
@@ -20,17 +21,33 @@ class LLMUnavailableError(RuntimeError):
     """Raised when an LLM extraction attempt cannot be completed."""
 
 
-@dataclass(slots=True)
-class ExtractionContext:
-    """User-provided hints that improve LLM extraction quality."""
+if sys.version_info >= (3, 10):
 
-    vendor_hint: str | None
-    currency_hint: str | None
-    document_name: str | None = None
-    document_kind: str = "unstructured"
-    extra_instructions: str | None = None
-    max_lines: int = 240
-    max_characters: int = 12000
+    @dataclass(slots=True)
+    class ExtractionContext:
+        """User-provided hints that improve LLM extraction quality."""
+
+        vendor_hint: str | None
+        currency_hint: str | None
+        document_name: str | None = None
+        document_kind: str = "unstructured"
+        extra_instructions: str | None = None
+        max_lines: int = 240
+        max_characters: int = 12000
+
+else:  # pragma: no cover - Python <3.10 compatibility
+
+    @dataclass
+    class ExtractionContext:
+        """User-provided hints that improve LLM extraction quality."""
+
+        vendor_hint: str | None
+        currency_hint: str | None
+        document_name: str | None = None
+        document_kind: str = "unstructured"
+        extra_instructions: str | None = None
+        max_lines: int = 240
+        max_characters: int = 12000
 
 
 class OfferLLMExtractor:

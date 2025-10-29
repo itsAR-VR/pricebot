@@ -1,0 +1,30 @@
+{
+  "client_id": "collector-primary",
+  "messages": [
+    {
+      "chat_title": "Dubai Electronics Group Deals",
+      "chat_type": "group",
+      "platform_id": "120363179753111@g.us",
+      "message_id": "3EB03B5F1EBD1AA3E4CF",
+      "observed_at": "2025-02-18T12:15:02Z",
+      "sender_name": "Ahmed Khan",
+      "sender_phone": "+971501234567",
+      "is_outgoing": false,
+      "text": "iPhone 15 256GB - AED 3610, stock 20 units, delivery today.",
+      "raw_payload": {
+        "messageTimestamp": 1739880902,
+        "type": "conversation"
+      }
+    },
+    {
+      "chat_title": "Vendor Support",
+      "chat_type": "direct",
+      "platform_id": "447700900123@s.whatsapp.net",
+      "observed_at": "2025-02-18T12:15:07Z",
+      "sender_name": "Pricebot Ops",
+      "sender_phone": "+971509999999",
+      "is_outgoing": true,
+      "text": "Got it, logging the offer."
+    }
+  ]
+}

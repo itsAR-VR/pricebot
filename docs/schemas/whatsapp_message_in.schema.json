@@ -1,0 +1,98 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://pricebot.app/schemas/whatsapp_message_in.schema.json",
+  "title": "WhatsAppMessageIn",
+  "description": "Normalized WhatsApp message payload forwarded from the collector to Pricebot.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["chat_title", "text"],
+  "properties": {
+    "chat_title": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 200,
+      "description": "Human-readable chat title as shown in WhatsApp.",
+      "examples": ["Dubai Electronics Group Deals", "Vendor Support"]
+    },
+    "chat_type": {
+      "type": "string",
+      "description": "Chat classification used for routing.",
+      "enum": ["group", "direct", "unknown"],
+      "default": "unknown",
+      "examples": ["group"]
+    },
+    "platform_id": {
+      "type": "string",
+      "minLength": 5,
+      "maxLength": 128,
+      "pattern": "^[A-Za-z0-9@._-]+$",
+      "description": "Stable WhatsApp JID for the chat (e.g. 1203...@g.us).",
+      "examples": ["120363179753111@g.us", "447700900123@s.whatsapp.net"]
+    },
+    "message_id": {
+      "type": ["string", "null"],
+      "minLength": 1,
+      "maxLength": 128,
+      "description": "Source message identifier from WhatsApp.",
+      "examples": ["3EB03B5F1EBD1AA3E4CF", "ABGGFlA5FhF0AgA="]
+    },
+    "observed_at": {
+      "type": ["string", "null"],
+      "format": "date-time",
+      "description": "UTC timestamp when the collector observed the message.",
+      "examples": ["2025-02-18T12:15:02Z"]
+    },
+    "sender_name": {
+      "type": ["string", "null"],
+      "maxLength": 200,
+      "description": "Display name for the sender at time of capture.",
+      "examples": ["Ahmed Khan"]
+    },
+    "sender_phone": {
+      "type": ["string", "null"],
+      "minLength": 5,
+      "maxLength": 32,
+      "description": "Sender phone number (E.164 preferred).",
+      "examples": ["+971501234567"]
+    },
+    "is_outgoing": {
+      "type": ["boolean", "null"],
+      "description": "True when the message originated from the logged-in account."
+    },
+    "text": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 5000,
+      "description": "Plain-text body. Collector may include media placeholder text.",
+      "examples": ["iPhone 15 256GB - AED 3610, stock 20 units, delivery today."]
+    },
+    "raw_payload": {
+      "type": ["object", "null"],
+      "description": "Collector-specific raw event payload for troubleshooting.",
+      "additionalProperties": true,
+      "examples": [
+        {
+          "messageTimestamp": 1739880902,
+          "type": "conversation"
+        }
+      ]
+    }
+  },
+  "examples": [
+    {
+      "chat_title": "Dubai Electronics Group Deals",
+      "chat_type": "group",
+      "platform_id": "120363179753111@g.us",
+      "message_id": "3EB03B5F1EBD1AA3E4CF",
+      "observed_at": "2025-02-18T12:15:02Z",
+      "sender_name": "Ahmed Khan",
+      "sender_phone": "+971501234567",
+      "is_outgoing": false,
+      "text": "iPhone 15 256GB - AED 3610, stock 20 units, delivery today.",
+      "raw_payload": {
+        "messageTimestamp": 1739880902,
+        "type": "conversation"
+      }
+    }
+  ]
+}

@@ -20,6 +20,7 @@ from app.api.deps import get_db
 from app.api.routes.health import healthcheck as health_status
 from app.core.config import settings
 from app.core.log_buffer import buffer_limits, get_log_entries, get_tool_entries
+from app.core.metrics import metrics as whatsapp_metrics
 from app.db import models
 from app.services.chat import ChatLookupService
 from app.services.help_index import get_help_index
@@ -232,7 +233,7 @@ def resolve_products(payload: ProductResolveRequest, session: Session = Depends(
         )
         for match in result_page.matches
     ]
-    next_offset = payload.offset + len(result_page.matches) if result_page.has_more else None
+    next_offset = payload.offset + payload.limit if result_page.has_more else None
     return ProductResolveResponse(
         products=products,
         limit=payload.limit,
@@ -319,7 +320,7 @@ def search_best_price(payload: BestPriceRequest, session: Session = Depends(get_
                 alternate_offers=alternate_offers,
             )
         )
-    next_offset = payload.offset + len(result_page.matches) if result_page.has_more else None
+    next_offset = payload.offset + payload.limit if result_page.has_more else None
     return BestPriceResponse(
         results=results,
         limit=payload.limit,
@@ -358,6 +359,29 @@ class DiagnosticsOffer(BaseModel):
     captured_at: datetime
     quantity: int | None = None
     condition: str | None = None
+
+
+class DiagnosticsWhatsAppMetric(BaseModel):
+    client_id: str
+    chat_id: str
+    chat_title: str | None = None
+    accepted: int
+    created: int
+    deduped: int
+    extracted: int
+    errors: int
+    last_event_at: datetime
+    media_uploaded: int | None = None
+    media_deduped: int | None = None
+    media_failed: int | None = None
+
+
+class DiagnosticsMediaFailure(BaseModel):
+    timestamp: datetime
+    client_id: str
+    chat_id: str | None = None
+    chat_title: str | None = None
+    reason: str | None = None
 
 
 class DiagnosticsFeatureFlags(BaseModel):
@@ -412,6 +436,8 @@ class DiagnosticsResponse(BaseModel):
     ingestion_warnings: list[DiagnosticsIngestionWarning]
     logs_tail: list[BufferedLogEntry] | None = None
     versions: DiagnosticsVersions | None = None
+    whatsapp_metrics: list[DiagnosticsWhatsAppMetric] = Field(default_factory=list)
+    whatsapp_media_failures: list[DiagnosticsMediaFailure] = Field(default_factory=list)
 
 
 class HelpRequest(BaseModel):
@@ -544,6 +570,34 @@ def _collect_diagnostics(
     if "versions" in include_normalized:
         versions = _build_diagnostics_versions(feature_flags)
 
+    whatsapp_counters = [
+        DiagnosticsWhatsAppMetric(
+            client_id=entry.client_id,
+            chat_id=entry.chat_id,
+            chat_title=entry.chat_title,
+            accepted=entry.accepted,
+            created=entry.created,
+            deduped=entry.deduped,
+            extracted=entry.extracted,
+            errors=entry.errors,
+            last_event_at=entry.last_event_at,
+            media_uploaded=entry.media_uploaded,
+            media_deduped=entry.media_deduped,
+            media_failed=entry.media_failed,
+        )
+        for entry in whatsapp_metrics.snapshot()
+    ]
+    media_failures = [
+        DiagnosticsMediaFailure(
+            timestamp=entry.timestamp,
+            client_id=entry.client_id,
+            chat_id=entry.chat_id,
+            chat_title=entry.chat_title,
+            reason=entry.reason,
+        )
+        for entry in whatsapp_metrics.recent_media_failures(limit=10)
+    ]
+
     return DiagnosticsResponse(
         metadata=metadata,
         health=health,
@@ -554,6 +608,8 @@ def _collect_diagnostics(
         ingestion_warnings=ingestion_warnings,
         logs_tail=logs_tail,
         versions=versions,
+        whatsapp_metrics=whatsapp_counters,
+        whatsapp_media_failures=media_failures,
     )
 
 

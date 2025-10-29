@@ -65,6 +65,8 @@ def test_diagnostics_endpoint_returns_counts(session):
     assert "missing price column" in doc_entry["ingestion_errors"]
     assert payload["ingestion_warnings"]
     assert "missing price column" in payload["ingestion_warnings"][0]["messages"][0]
+    assert isinstance(payload.get("whatsapp_metrics"), list)
+    assert isinstance(payload.get("whatsapp_media_failures"), list)
 
     download = client.get("/chat/tools/diagnostics/download")
     assert download.status_code == 200

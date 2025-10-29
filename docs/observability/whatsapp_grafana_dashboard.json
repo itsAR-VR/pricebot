@@ -1,0 +1,254 @@
+{
+  "title": "Pricebot - WhatsApp Observability",
+  "uid": "pricebot-whatsapp-observability",
+  "timezone": "browser",
+  "schemaVersion": 37,
+  "version": 1,
+  "tags": [
+    "pricebot",
+    "whatsapp",
+    "observability"
+  ],
+  "time": {
+    "from": "now-6h",
+    "to": "now"
+  },
+  "timepicker": {
+    "refresh_intervals": [
+      "15s",
+      "30s",
+      "1m",
+      "5m"
+    ]
+  },
+  "templating": {
+    "list": [
+      {
+        "name": "datasource",
+        "type": "datasource",
+        "query": "simpod-json-datasource",
+        "label": "JSON API datasource (points to backend /metrics)",
+        "current": {
+          "text": "Select datasource",
+          "value": ""
+        }
+      }
+    ]
+  },
+  "panels": [
+    {
+      "type": "stat",
+      "title": "Created Offers / min",
+      "id": 1,
+      "gridPos": { "h": 5, "w": 6, "x": 0, "y": 0 },
+      "options": {
+        "reduceOptions": {
+          "calcs": ["lastNotNull"],
+          "fields": "",
+          "values": false
+        },
+        "orientation": "horizontal"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "none",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "red", "value": null },
+              { "color": "green", "value": 1 }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "simpod-json-datasource",
+            "uid": "$datasource"
+          },
+          "method": "GET",
+          "url": "/metrics",
+          "cacheDurationSeconds": 15,
+          "dataPath": "whatsapp.totals.created"
+        }
+      ]
+    },
+    {
+      "type": "stat",
+      "title": "Deduped Messages / min",
+      "id": 2,
+      "gridPos": { "h": 5, "w": 6, "x": 6, "y": 0 },
+      "options": {
+        "reduceOptions": {
+          "calcs": ["lastNotNull"],
+          "fields": "",
+          "values": false
+        },
+        "orientation": "horizontal"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "none",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "red", "value": null },
+              { "color": "green", "value": 1 }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "simpod-json-datasource",
+            "uid": "$datasource"
+          },
+          "method": "GET",
+          "url": "/metrics",
+          "cacheDurationSeconds": 15,
+          "dataPath": "whatsapp.totals.deduped"
+        }
+      ]
+    },
+    {
+      "type": "timeseries",
+      "title": "401 / 403 / 429 Trend",
+      "id": 3,
+      "gridPos": { "h": 9, "w": 12, "x": 12, "y": 0 },
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "lineStyle": { "fill": "solid" },
+            "lineWidth": 2
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "table",
+          "placement": "right"
+        },
+        "tooltip": {
+          "mode": "multi"
+        }
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "simpod-json-datasource",
+            "uid": "$datasource"
+          },
+          "method": "GET",
+          "url": "/metrics",
+          "cacheDurationSeconds": 15,
+          "dataPath": "whatsapp.totals.auth_failures",
+          "alias": "401 auth failures"
+        },
+        {
+          "refId": "B",
+          "datasource": {
+            "type": "simpod-json-datasource",
+            "uid": "$datasource"
+          },
+          "method": "GET",
+          "url": "/metrics",
+          "cacheDurationSeconds": 15,
+          "dataPath": "whatsapp.totals.forbidden",
+          "alias": "403 HMAC failures"
+        },
+        {
+          "refId": "C",
+          "datasource": {
+            "type": "simpod-json-datasource",
+            "uid": "$datasource"
+          },
+          "method": "GET",
+          "url": "/metrics",
+          "cacheDurationSeconds": 15,
+          "dataPath": "whatsapp.totals.rate_limited",
+          "alias": "429 rate limited"
+        }
+      ]
+    },
+    {
+      "type": "stat",
+      "title": "Extraction Errors (rolling)",
+      "id": 4,
+      "gridPos": { "h": 5, "w": 6, "x": 0, "y": 5 },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "none",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "green", "value": null },
+              { "color": "orange", "value": 5 },
+              { "color": "red", "value": 10 }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": ["lastNotNull"],
+          "fields": "",
+          "values": false
+        },
+        "orientation": "horizontal",
+        "textMode": "value_and_name"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "simpod-json-datasource",
+            "uid": "$datasource"
+          },
+          "method": "GET",
+          "url": "/metrics",
+          "cacheDurationSeconds": 15,
+          "dataPath": "whatsapp.totals.errors"
+        }
+      ]
+    },
+    {
+      "type": "table",
+      "title": "Recent Auth / Rate-limit Failures",
+      "id": 5,
+      "gridPos": { "h": 9, "w": 12, "x": 12, "y": 9 },
+      "options": {
+        "showHeader": true
+      },
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "align": "auto"
+          }
+        },
+        "overrides": []
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "simpod-json-datasource",
+            "uid": "$datasource"
+          },
+          "method": "GET",
+          "url": "/metrics",
+          "cacheDurationSeconds": 15,
+          "dataPath": "whatsapp.recent_failures"
+        }
+      ]
+    }
+  ]
+}

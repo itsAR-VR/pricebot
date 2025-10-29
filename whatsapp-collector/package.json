@@ -1,0 +1,38 @@
+{
+  "name": "whatsapp-collector",
+  "version": "0.1.0",
+  "private": true,
+  "description": "WhatsApp Web collector that forwards normalized messages to Pricebot ingest APIs.",
+  "type": "module",
+  "main": "dist/index.js",
+  "scripts": {
+    "dev": "tsx src/index.ts",
+    "build": "tsc -p tsconfig.json",
+    "start": "node dist/index.js",
+    "clean": "rimraf dist",
+    "test": "jest"
+  },
+  "dependencies": {
+    "@adiwajshing/baileys": "^5.0.0",
+    "axios": "^1.7.9",
+    "form-data": "^4.0.0",
+    "p-retry": "^6.2.0",
+    "pino": "^9.6.0",
+    "@hapi/boom": "^10.0.1",
+    "qrcode-terminal": "^0.12.0",
+    "zod": "^3.23.8"
+  },
+  "devDependencies": {
+    "@types/jest": "^29.5.12",
+    "@types/node": "^20.17.11",
+    "@types/qrcode-terminal": "^0.12.2",
+    "jest": "^29.7.0",
+    "rimraf": "^5.0.10",
+    "ts-jest": "^29.2.5",
+    "tsx": "^4.17.0",
+    "typescript": "^5.7.3"
+  },
+  "engines": {
+    "node": ">=20.10.0"
+  }
+}

@@ -75,9 +75,26 @@ class Settings(BaseSettings):
 
     enable_openai: bool = False
     openai_api_key: Optional[str] = None
+    # Use LLM to assist product resolution/ranking in chat tools
+    use_llm_product_resolve: bool = True
 
     # Ingest settings
     whatsapp_ingest_token: Optional[str] = None
+    whatsapp_ingest_hmac_secret: Optional[str] = None
+    whatsapp_ingest_signature_ttl_seconds: int = 300
+    whatsapp_content_hash_window_hours: int = 24
+    whatsapp_ingest_rate_limit_per_minute: int = 600
+    whatsapp_ingest_rate_limit_burst: int = 200
+    whatsapp_extract_debounce_seconds: float = 10.0
+    whatsapp_media_storage_backend: str = "local"
+    whatsapp_media_s3_bucket: Optional[str] = None
+    whatsapp_media_s3_prefix: str = "whatsapp-media/"
+    whatsapp_media_s3_region: Optional[str] = None
+    whatsapp_media_s3_endpoint_url: Optional[str] = None
+    whatsapp_media_gcs_bucket: Optional[str] = None
+    whatsapp_media_gcs_prefix: str = "whatsapp-media/"
+    whatsapp_media_max_bytes: int = 15 * 1024 * 1024
+    whatsapp_media_storage_timeout_seconds: float = 20.0
 
     # CORS settings (kept simple for now; default open for local/dev)
     cors_allow_all: bool = True
@@ -99,6 +116,13 @@ class Settings(BaseSettings):
             return None
         return Path(value)
 
+    @field_validator("whatsapp_media_storage_backend", mode="before")
+    @classmethod
+    def _normalize_media_backend(cls, value: Optional[str]) -> str:
+        normalized = (value or "local").strip().lower()
+        if normalized not in {"local", "s3", "gcs"}:
+            raise ValueError("whatsapp_media_storage_backend must be 'local', 's3', or 'gcs'")
+        return normalized
 
 @lru_cache
 def get_settings() -> Settings:

@@ -1,18 +1,21 @@
 import pathlib
 from pathlib import Path
+from contextlib import contextmanager
 
 from datetime import datetime
 from uuid import UUID
 
 from fastapi.testclient import TestClient
 from sqlalchemy.exc import OperationalError
-from sqlmodel import select
+from sqlmodel import Session, select
 
 from app.api.deps import get_db
 from app.api.routes import documents as documents_route
 from app.core.config import settings
 from app.db import models
 from app.main import app
+from app.services import ingestion_jobs
+from app.services.ingestion_jobs import ingestion_job_runner
 
 
 def _override_get_db(session):
@@ -21,7 +24,30 @@ def _override_get_db(session):
     return _get_db
 
 
+def _enable_sync_ingestion(monkeypatch, session):
+    engine = session.get_bind()
+
+    @contextmanager
+    def _job_session_override():
+        job_session = Session(engine)
+        try:
+            yield job_session
+            job_session.commit()
+        except Exception:
+            job_session.rollback()
+            raise
+        finally:
+            job_session.close()
+
+    def _run_immediately(job_id):
+        ingestion_job_runner._run_job_sync(job_id)
+
+    monkeypatch.setattr(ingestion_jobs, "get_session", _job_session_override)
+    monkeypatch.setattr(ingestion_job_runner, "enqueue", _run_immediately)
+
+
 def test_upload_endpoint_persists_document(monkeypatch, tmp_path, session):
+    _enable_sync_ingestion(monkeypatch, session)
     app.dependency_overrides[get_db] = _override_get_db(session)
     monkeypatch.setattr(settings, "ingestion_storage_dir", tmp_path)
 
@@ -33,10 +59,15 @@ def test_upload_endpoint_persists_document(monkeypatch, tmp_path, session):
         data={"vendor_name": "Test Vendor"},
     )
 
-    assert response.status_code == 200
+    assert response.status_code == 202
     payload = response.json()
-    assert payload["status"] == "success"
-    assert payload["offers_count"] == 1
+    assert payload["status"] == "accepted"
+    assert payload["accepted_count"] == 1
+    assert payload["failed_count"] == 0
+    assert len(payload["accepted"]) == 1
+    job_info = payload["accepted"][0]
+    assert job_info["job_id"]
+    assert job_info["document_id"]
 
     saved_files = list(tmp_path.iterdir())
     assert saved_files, "uploaded file was not written to storage"
@@ -68,6 +99,7 @@ def test_root_redirects_to_upload():
 
 
 def test_upload_handles_weird_filename(monkeypatch, tmp_path, session):
+    _enable_sync_ingestion(monkeypatch, session)
     app.dependency_overrides[get_db] = _override_get_db(session)
     monkeypatch.setattr(settings, "ingestion_storage_dir", tmp_path)
 
@@ -79,7 +111,9 @@ def test_upload_handles_weird_filename(monkeypatch, tmp_path, session):
         data={"vendor_name": "Odd Vendor"},
     )
 
-    assert response.status_code == 200
+    assert response.status_code == 202
+    payload = response.json()
+    assert payload["status"] == "accepted"
 
     session.expire_all()
     document = session.exec(
@@ -148,13 +182,14 @@ def test_upload_handles_generic_database_error(monkeypatch, tmp_path, session):
 
     assert response.status_code == 500
     body = response.json()
-    assert "database" in body["detail"].lower()
+    assert "ingestion job metadata" in body["detail"].lower() or "document metadata" in body["detail"].lower()
     assert not any(tmp_path.iterdir())
 
     session.commit = original_commit
     app.dependency_overrides.pop(get_db, None)
 
 def test_upload_storage_filenames_unique(monkeypatch, tmp_path, session):
+    _enable_sync_ingestion(monkeypatch, session)
     app.dependency_overrides[get_db] = _override_get_db(session)
     monkeypatch.setattr(settings, "ingestion_storage_dir", tmp_path)
 
@@ -174,7 +209,8 @@ def test_upload_storage_filenames_unique(monkeypatch, tmp_path, session):
             files={"file": ("duplicate.csv", file_content, "text/csv")},
             data=payload,
         )
-        assert response.status_code == 200
+        assert response.status_code == 202
+        assert response.json()["status"] == "accepted"
 
     session.expire_all()
     documents = session.exec(select(models.SourceDocument)).all()
@@ -192,6 +228,7 @@ def test_upload_storage_filenames_unique(monkeypatch, tmp_path, session):
 
 
 def test_upload_multiple_files_single_request(monkeypatch, tmp_path, session):
+    _enable_sync_ingestion(monkeypatch, session)
     app.dependency_overrides[get_db] = _override_get_db(session)
     monkeypatch.setattr(settings, "ingestion_storage_dir", tmp_path)
 
@@ -207,12 +244,13 @@ def test_upload_multiple_files_single_request(monkeypatch, tmp_path, session):
         data={"vendor_name": "Multi Vendor"},
     )
 
-    assert response.status_code == 200
+    assert response.status_code == 202
     payload = response.json()
-    assert payload["status"] == "success"
-    assert payload["processed_count"] == 2
+    assert payload["status"] == "accepted"
+    assert payload["accepted_count"] == 2
     assert payload["failed_count"] == 0
-    assert len(payload["processed"]) == 2
+    assert len(payload["accepted"]) == 2
+    assert payload["failed"] == []
 
     session.expire_all()
     documents = session.exec(select(models.SourceDocument).order_by(models.SourceDocument.file_name)).all()
@@ -226,6 +264,7 @@ def test_upload_multiple_files_single_request(monkeypatch, tmp_path, session):
 
 
 def test_upload_multiple_files_partial_failure(monkeypatch, tmp_path, session):
+    _enable_sync_ingestion(monkeypatch, session)
     app.dependency_overrides[get_db] = _override_get_db(session)
     monkeypatch.setattr(settings, "ingestion_storage_dir", tmp_path)
 
@@ -241,14 +280,14 @@ def test_upload_multiple_files_partial_failure(monkeypatch, tmp_path, session):
         data={"vendor_name": "Partial Vendor"},
     )
 
-    assert response.status_code == 200
+    assert response.status_code == 202
     payload = response.json()
-    assert payload["status"] == "partial_success"
-    assert payload["processed_count"] == 1
+    assert payload["status"] == "partial"
+    assert payload["accepted_count"] == 1
     assert payload["failed_count"] == 1
-    assert len(payload["processed"]) == 1
-    assert len(payload["errors"]) == 1
-    assert "Unsupported file type" in payload["errors"][0]["detail"]
+    assert len(payload["accepted"]) == 1
+    assert len(payload["failed"]) == 1
+    assert "Unsupported file type" in payload["failed"][0]["detail"]
 
     session.expire_all()
     documents = session.exec(select(models.SourceDocument)).all()

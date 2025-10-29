@@ -44,9 +44,9 @@ docs/
 *.log
 logs/
 
-# Environment
-.env
-.env.local
+# Environment (keep .env so Railway receives default credentials)
+# .env
+# .env.local
 
 # macOS
 .DS_Store
@@ -56,7 +56,6 @@ DEPLOY.md
 DEPLOYMENT_READY.md
 RAILWAY_SETUP.md
 Web Build Logs.log
-
 
 
 

@@ -66,3 +66,19 @@ Once deployed, visit `https://<railway-domain>/admin/documents` to monitor artef
 - **Timezones**: all timestamps are stored in UTC; the UI formats them as `YYYY-MM-DD HH:MM` (UTC).
 
 Refer back to `railway.json` and `Procfile` for the default production command and health check path.
+
+## 8. Deploying the WhatsApp Collector
+1. Create a second Railway service from `whatsapp-collector/` (Node 20 runtime). The build command should be `npm install && npm run build`; the start command is `node dist/index.js`.
+2. Mount a persistent volume (e.g. 1 GB) and set `AUTH_STATE_DIR=/data/auth-state` so WhatsApp session credentials survive restarts.
+3. Set environment variables:
+   - `WHATSAPP_INGEST_URL` – the public HTTPS endpoint for `/integrations/whatsapp/ingest`.
+   - `WHATSAPP_INGEST_TOKEN` / `WHATSAPP_INGEST_HMAC_SECRET` – keep in sync with the backend.
+   - `CLIENT_ID` – unique identifier per collector; shows up in diagnostics.
+   - `BATCH_MAX_MESSAGES`, `BATCH_FLUSH_INTERVAL_MS`, `PORT` (for the status server), and any media upload overrides.
+4. Railway automatically exposes the `/healthz` and `/metrics` routes on the assigned port; pin the service to the same region as the backend to minimise latency.
+5. Keep the collector and backend in the same Railway project so secret rotation can be rolled out with a single `railway variables set` + double redeploy (backend first, collector second).
+
+## 9. Zero-downtime redeploys
+- **Backend:** Railway performs rolling deploys by default. Ensure the health check path in `railway.json` (`/health`) passes before traffic is cut over. For schema changes, run the migration job first, then deploy.
+- **Collector:** the Node process traps `SIGINT`/`SIGTERM`, flushes any pending batches, and shuts down gracefully. Use `railway service redeploy whatsapp-collector` to trigger a single-instance rolling restart. Because the auth state lives on a volume, the QR session remains intact.
+- **Secret changes:** update environment variables, deploy the backend, verify with a smoke ingest, then redeploy the collector. The ingest playbook (`docs/ingestion_playbook.md`) contains the detailed rotation sequence.

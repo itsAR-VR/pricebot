@@ -1,5 +1,3 @@
-from __future__ import annotations
-
 from datetime import datetime, timezone
 from typing import Optional, List
 from uuid import UUID, uuid4
@@ -72,6 +70,11 @@ class SourceDocument(SQLModel, table=True):
 
     id: UUID = Field(default_factory=uuid4, primary_key=True, index=True)
     vendor_id: Optional[UUID] = Field(default=None, foreign_key="vendors.id")
+    source_whatsapp_message_id: Optional[UUID] = Field(
+        default=None,
+        foreign_key="whatsapp_messages.id",
+        index=True,
+    )
     file_name: str = Field(nullable=False)
     file_type: str = Field(nullable=False, index=True)
     storage_path: str = Field(nullable=False)
@@ -81,6 +84,10 @@ class SourceDocument(SQLModel, table=True):
     extra: Optional[dict] = Field(default=None, sa_column=Column(JSON))
 
     vendor: Optional[Vendor] = Relationship(back_populates="documents", sa_relationship_kwargs={"lazy": "selectin"})
+    source_whatsapp_message: Optional["WhatsAppMessage"] = Relationship(
+        back_populates="media_documents",
+        sa_relationship_kwargs={"lazy": "selectin"},
+    )
     offers: List["Offer"] = Relationship(back_populates="source_document", sa_relationship_kwargs={"lazy": "selectin"})
     ingestion_jobs: List["IngestionJob"] = Relationship(back_populates="source_document", sa_relationship_kwargs={"lazy": "selectin"})
 
@@ -153,11 +160,13 @@ class WhatsAppChat(SQLModel, table=True):
 
     id: UUID = Field(default_factory=uuid4, primary_key=True, index=True)
     title: str = Field(index=True, nullable=False)
+    vendor_id: Optional[UUID] = Field(default=None, foreign_key="vendors.id", index=True)
     chat_type: Optional[str] = Field(default=None, index=True)
     platform_id: Optional[str] = Field(default=None, index=True)
     extra: Optional[dict] = Field(default=None, sa_column=Column(JSON))
     last_extracted_at: Optional[datetime] = Field(default=None, index=True)
 
+    vendor: Optional[Vendor] = Relationship(sa_relationship_kwargs={"lazy": "selectin"})
     messages: List["WhatsAppMessage"] = Relationship(back_populates="chat", sa_relationship_kwargs={"lazy": "selectin"})
 
 
@@ -180,6 +189,10 @@ class WhatsAppMessage(SQLModel, table=True):
     raw_payload: Optional[dict] = Field(default=None, sa_column=Column(JSON))
 
     chat: WhatsAppChat = Relationship(back_populates="messages", sa_relationship_kwargs={"lazy": "selectin"})
+    media_documents: List[SourceDocument] = Relationship(
+        back_populates="source_whatsapp_message",
+        sa_relationship_kwargs={"lazy": "selectin"},
+    )
 
 
 __all__ = [

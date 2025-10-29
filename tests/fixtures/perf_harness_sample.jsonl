@@ -1,0 +1,22 @@
+# Synthetic harness output recorded from local replay of WhatsApp batches.
+# Each row describes a single batch submission (latencies in seconds).
+{"batch": 1, "latency_seconds": 0.82, "status_code": 200, "created": 9, "deduped": 1, "skipped": 0}
+{"batch": 2, "latency_seconds": 0.88, "status_code": 200, "created": 8, "deduped": 2, "skipped": 0}
+{"batch": 3, "latency_seconds": 0.91, "status_code": 200, "created": 9, "deduped": 1, "skipped": 0}
+{"batch": 4, "latency_seconds": 0.95, "status_code": 200, "created": 8, "deduped": 2, "skipped": 0}
+{"batch": 5, "latency_seconds": 0.89, "status_code": 200, "created": 8, "deduped": 2, "skipped": 0}
+{"batch": 6, "latency_seconds": 1.02, "status_code": 200, "created": 9, "deduped": 1, "skipped": 0}
+{"batch": 7, "latency_seconds": 0.97, "status_code": 200, "created": 8, "deduped": 2, "skipped": 0}
+{"batch": 8, "latency_seconds": 0.93, "status_code": 200, "created": 9, "deduped": 1, "skipped": 0}
+{"batch": 9, "latency_seconds": 0.87, "status_code": 200, "created": 8, "deduped": 2, "skipped": 0}
+{"batch": 10, "latency_seconds": 0.9, "status_code": 200, "created": 9, "deduped": 1, "skipped": 0}
+{"batch": 11, "latency_seconds": 1.05, "status_code": 200, "created": 9, "deduped": 1, "skipped": 0}
+{"batch": 12, "latency_seconds": 0.92, "status_code": 200, "created": 8, "deduped": 2, "skipped": 0}
+{"batch": 13, "latency_seconds": 1.1, "status_code": 200, "created": 9, "deduped": 1, "skipped": 0}
+{"batch": 14, "latency_seconds": 0.99, "status_code": 200, "created": 8, "deduped": 2, "skipped": 0}
+{"batch": 15, "latency_seconds": 1.03, "status_code": 200, "created": 9, "deduped": 1, "skipped": 0}
+{"batch": 16, "latency_seconds": 0.86, "status_code": 200, "created": 8, "deduped": 2, "skipped": 0}
+{"batch": 17, "latency_seconds": 0.84, "status_code": 200, "created": 9, "deduped": 1, "skipped": 0}
+{"batch": 18, "latency_seconds": 0.96, "status_code": 200, "created": 8, "deduped": 2, "skipped": 0}
+{"batch": 19, "latency_seconds": 1.08, "status_code": 200, "created": 9, "deduped": 1, "skipped": 0}
+{"batch": 20, "latency_seconds": 0.94, "status_code": 200, "created": 8, "deduped": 2, "skipped": 0}

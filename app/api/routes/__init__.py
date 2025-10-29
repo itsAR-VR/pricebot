@@ -8,5 +8,6 @@ __all__ = [
     "price_history",
     "documents",
     "chat_tools",
+    "metrics",
     "integrations_whatsapp",
 ]

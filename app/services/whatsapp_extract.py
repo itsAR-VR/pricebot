@@ -3,6 +3,7 @@ from __future__ import annotations
 import logging
 from datetime import datetime
 from typing import Iterable
+from uuid import UUID
 
 from sqlmodel import Session, select
 
@@ -46,8 +47,9 @@ class WhatsAppExtractionService:
         if not messages:
             return {"offers": 0, "warnings": 0}
 
+        mapped_vendor = self.session.get(models.Vendor, chat.vendor_id) if chat.vendor_id else None
         lines = [m.text for m in messages if m.text and m.text.strip()]
-        default_vendor = chat.title or "WhatsApp Vendor"
+        default_vendor = (mapped_vendor.name if mapped_vendor else None) or chat.title or "WhatsApp Vendor"
         currency = settings.default_currency
 
         heuristic_offers: list[RawOffer] = []
@@ -61,6 +63,8 @@ class WhatsAppExtractionService:
                 raw_payload={"message_id": m.message_id, "observed_at": m.observed_at.isoformat()},
             )
             if offer:
+                if mapped_vendor:
+                    offer.vendor_name = mapped_vendor.name
                 # tie offer to message id and observed time
                 try:
                     offer.captured_at = m.observed_at
@@ -97,11 +101,18 @@ class WhatsAppExtractionService:
                         warnings.extend(llm_warnings)
                 except LLMUnavailableError as exc:
                     warnings.append(str(exc))
+        if mapped_vendor:
+            for offer in offers:
+                offer.vendor_name = mapped_vendor.name
 
         # Persist via OfferIngestionService, with a synthetic SourceDocument for traceability
-        source_doc = self._create_source_document(chat)
+        source_doc = self._create_source_document(chat, vendor_id=mapped_vendor.id if mapped_vendor else None)
         ingestion = OfferIngestionService(self.session)
-        persisted = ingestion.ingest(offers, vendor_name=default_vendor, source_document=source_doc)
+        persisted = ingestion.ingest(
+            offers,
+            vendor_name=mapped_vendor.name if mapped_vendor else default_vendor,
+            source_document=source_doc,
+        )
 
         # Update vendor on document for traceability
         if persisted and not source_doc.vendor_id:
@@ -127,11 +138,11 @@ class WhatsAppExtractionService:
 
         return {"offers": len(persisted), "warnings": len(warnings) + len(errors), "document_id": str(source_doc.id)}
 
-    def _create_source_document(self, chat: models.WhatsAppChat) -> models.SourceDocument:
+    def _create_source_document(self, chat: models.WhatsAppChat, *, vendor_id: UUID | None = None) -> models.SourceDocument:
         name = f"{chat.title}.whatsapp"
         path = f"whatsapp://chat/{chat.id}"
         doc = models.SourceDocument(
-            vendor_id=None,
+            vendor_id=vendor_id,
             file_name=name,
             file_type="whatsapp_live",
             storage_path=path,

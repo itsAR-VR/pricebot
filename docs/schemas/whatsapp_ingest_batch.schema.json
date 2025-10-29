@@ -1,0 +1,49 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://pricebot.app/schemas/whatsapp_ingest_batch.schema.json",
+  "title": "WhatsAppIngestBatch",
+  "description": "Batch payload submitted to /integrations/whatsapp/ingest.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["client_id", "messages"],
+  "properties": {
+    "client_id": {
+      "type": "string",
+      "minLength": 3,
+      "maxLength": 200,
+      "description": "Unique identifier for the collector instance submitting the batch.",
+      "examples": ["collector-primary", "qr-session-abcd1234"]
+    },
+    "messages": {
+      "type": "array",
+      "minItems": 1,
+      "maxItems": 500,
+      "description": "Ordered list of WhatsApp messages collected since the previous flush.",
+      "items": {
+        "$ref": "./whatsapp_message_in.schema.json"
+      }
+    }
+  },
+  "examples": [
+    {
+      "client_id": "collector-primary",
+      "messages": [
+        {
+          "chat_title": "Dubai Electronics Group Deals",
+          "chat_type": "group",
+          "platform_id": "120363179753111@g.us",
+          "message_id": "3EB03B5F1EBD1AA3E4CF",
+          "observed_at": "2025-02-18T12:15:02Z",
+          "sender_name": "Ahmed Khan",
+          "sender_phone": "+971501234567",
+          "is_outgoing": false,
+          "text": "iPhone 15 256GB - AED 3610, stock 20 units, delivery today.",
+          "raw_payload": {
+            "messageTimestamp": 1739880902,
+            "type": "conversation"
+          }
+        }
+      ]
+    }
+  ]
+}

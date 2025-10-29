@@ -8,6 +8,28 @@
   <button class="refresh-btn" onclick="extractLatest()">Extract Latest</button>
 </div>
 
+<div class="mapping-card">
+  <div class="mapping-status">
+    <span class="mapping-label">Mapped Vendor:</span>
+    <span id="mappedVendor" class="mapping-value">
+      {% if chat.vendor_name %}
+      {{ chat.vendor_name }}
+      {% else %}
+      <span class="chip chip--muted">Unmapped</span>
+      {% endif %}
+    </span>
+  </div>
+  <div class="mapping-controls">
+    <label for="vendor-select">Select vendor</label>
+    <select id="vendor-select">
+      <option value="">Unmapped</option>
+    </select>
+    <button class="refresh-btn" type="button" onclick="saveMapping()">Save</button>
+    <button class="refresh-btn" type="button" onclick="clearMapping()">Clear</button>
+  </div>
+  <div id="mappingResult" class="result"></div>
+</div>
+
 <div id="result" class="result"></div>
 
 <table>
@@ -30,6 +52,11 @@
 </table>
 
 <script>
+const vendorsEndpoint = "{{ vendors_endpoint }}";
+const chatVendorEndpoint = "{{ chat_vendor_endpoint }}";
+const initialVendorId = "{{ chat.vendor_id or '' }}";
+const initialVendorName = {{ chat.vendor_name | tojson }};
+
 async function extractDeals() {
   const res = await fetch('/integrations/whatsapp/chats/{{ chat.id }}/extract', { method: 'POST' });
   const data = await res.json();
@@ -42,5 +69,110 @@ async function extractLatest() {
   const el = document.getElementById('result');
   el.textContent = `Extracted latest offers: ${data.offers}, warnings: ${data.warnings}`;
 }
+
+function setMappingDisplay(vendorId, vendorName) {
+  const select = document.getElementById('vendor-select');
+  const mapped = document.getElementById('mappedVendor');
+  select.value = vendorId || "";
+  if (vendorName) {
+    mapped.textContent = vendorName;
+  } else {
+    mapped.innerHTML = '<span class="chip chip--muted">Unmapped</span>';
+  }
+}
+
+async function loadVendors() {
+  try {
+    const res = await fetch(`${vendorsEndpoint}?limit=200`);
+    if (!res.ok) {
+      throw new Error(`Failed to load vendors (${res.status})`);
+    }
+    const vendors = await res.json();
+    const select = document.getElementById('vendor-select');
+    vendors.forEach((vendor) => {
+      const option = document.createElement('option');
+      option.value = vendor.id;
+      option.textContent = vendor.name;
+      select.appendChild(option);
+    });
+    setMappingDisplay(initialVendorId || "", initialVendorName || null);
+  } catch (err) {
+    const el = document.getElementById('mappingResult');
+    el.textContent = err.message;
+  }
+}
+
+async function updateMapping(vendorId) {
+  const body = JSON.stringify({ vendor_id: vendorId || null });
+  const res = await fetch(chatVendorEndpoint, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body,
+  });
+  const el = document.getElementById('mappingResult');
+  if (!res.ok) {
+    const message = await res.text();
+    el.textContent = `Failed to update mapping: ${message}`;
+    return;
+  }
+  const data = await res.json();
+  setMappingDisplay(data.vendor_id, data.vendor_name);
+  el.textContent = data.vendor_name ? `Mapped to ${data.vendor_name}` : 'Mapping cleared';
+}
+
+async function saveMapping() {
+  const select = document.getElementById('vendor-select');
+  await updateMapping(select.value);
+}
+
+async function clearMapping() {
+  document.getElementById('vendor-select').value = "";
+  await updateMapping(null);
+}
+
+loadVendors();
 </script>
+<style>
+.mapping-card {
+  margin: 16px 0 20px;
+  padding: 16px;
+  border: 1px solid rgba(148, 163, 184, 0.2);
+  border-radius: 12px;
+  background: rgba(15, 23, 42, 0.5);
+}
+.mapping-card .mapping-status {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 12px;
+}
+.mapping-card .mapping-label {
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  font-size: 13px;
+  text-transform: uppercase;
+  color: rgba(226, 232, 240, 0.8);
+}
+.mapping-card .mapping-controls {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+.mapping-card select {
+  min-width: 220px;
+  background: rgba(15, 23, 42, 0.6);
+  color: inherit;
+  border: 1px solid rgba(100, 116, 139, 0.4);
+  border-radius: 8px;
+  padding: 6px 10px;
+}
+.mapping-card label {
+  font-size: 14px;
+  color: rgba(226, 232, 240, 0.75);
+}
+.mapping-card .result {
+  margin-top: 10px;
+}
+</style>
 {% endblock %}

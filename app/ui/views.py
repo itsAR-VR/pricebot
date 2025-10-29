@@ -59,6 +59,8 @@ async def chat_page(request: Request) -> HTMLResponse:
             "logs": "/chat/tools/logs",
             "logs_download": "/chat/tools/logs/download",
             "export_best_price": "/chat/tools/offers/export",
+            "stream": "/chat/stream",
+            "jobs": "/documents/jobs",
         },
         "environment": settings.environment,
         "dev_mode": is_dev_mode,
@@ -171,14 +173,18 @@ async def whatsapp_dashboard(request: Request, session: Session = Depends(get_db
             .order_by(models.WhatsAppMessage.observed_at.desc())
             .limit(1)
         ).first()
-        count = session.exec(
+        count_result = session.exec(
             select(func.count()).select_from(models.WhatsAppMessage).where(models.WhatsAppMessage.chat_id == chat.id)
         ).one()
+        count = int(count_result[0] if isinstance(count_result, tuple) else count_result)
+        vendor = chat.vendor
         rows.append({
             "id": chat.id,
             "title": chat.title,
             "last_message_at": _fmt(last.observed_at) if last else "-",
             "count": count,
+            "vendor_id": chat.vendor_id,
+            "vendor_name": vendor.name if vendor else None,
         })
 
     context = {
@@ -214,7 +220,14 @@ async def whatsapp_chat_detail(request: Request, chat_id: UUID, session: Session
     context = {
         "request": request,
         "title": f"Chat: {chat.title}",
-        "chat": {"id": chat.id, "title": chat.title},
+        "chat": {
+            "id": chat.id,
+            "title": chat.title,
+            "vendor_id": chat.vendor_id,
+            "vendor_name": chat.vendor.name if chat.vendor else None,
+        },
         "messages": rows,
+        "vendors_endpoint": "/vendors",
+        "chat_vendor_endpoint": f"/integrations/whatsapp/chats/{chat.id}/vendor",
     }
     return _templates.TemplateResponse(request, "whatsapp_chat_detail.html", context)

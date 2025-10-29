@@ -41,6 +41,7 @@ def run_schema_migrations(engine: Engine) -> None:
             if "source_documents" in table_names:
                 columns = {col["name"] for col in inspector.get_columns("source_documents")}
                 statements: list[str] = []
+                post_statements: list[str] = []
 
                 if "ingest_started_at" not in columns:
                     statements.append(
@@ -59,6 +60,14 @@ def run_schema_migrations(engine: Engine) -> None:
                     statements.append(
                         f"ALTER TABLE source_documents ADD COLUMN extra {_json_type()}"
                     )
+                if "source_whatsapp_message_id" not in columns:
+                    statements.append(
+                        f"ALTER TABLE source_documents ADD COLUMN source_whatsapp_message_id {_uuid_type()} NULL"
+                    )
+                    post_statements.append(
+                        "CREATE INDEX IF NOT EXISTS ix_source_documents_source_whatsapp_message_id "
+                        "ON source_documents (source_whatsapp_message_id)"
+                    )
 
                 for statement in statements:
                     logger.info("Applying migration: %s", statement)
@@ -68,6 +77,9 @@ def run_schema_migrations(engine: Engine) -> None:
                     connection.execute(
                         text("UPDATE source_documents SET status = COALESCE(status, 'pending')")
                     )
+                for statement in post_statements:
+                    logger.info("Applying migration: %s", statement)
+                    connection.execute(text(statement))
 
             if "offers" in table_names:
                 columns = {col["name"] for col in inspector.get_columns("offers")}
@@ -92,6 +104,13 @@ def run_schema_migrations(engine: Engine) -> None:
                     )
                     logger.info("Applying migration: %s", statement)
                     connection.execute(text(statement))
+                if "vendor_id" not in columns:
+                    statement = f"ALTER TABLE whatsapp_chats ADD COLUMN vendor_id {_uuid_type()} NULL"
+                    logger.info("Applying migration: %s", statement)
+                    connection.execute(text(statement))
+                    index_stmt = "CREATE INDEX IF NOT EXISTS ix_whatsapp_chats_vendor_id ON whatsapp_chats (vendor_id)"
+                    logger.info("Applying migration: %s", index_stmt)
+                    connection.execute(text(index_stmt))
 
     except SQLAlchemyError:
         logger.exception("Schema migration failed")

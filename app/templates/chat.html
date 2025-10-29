@@ -794,12 +794,6 @@
     const devMode = {{ dev_mode | tojson }};
     const environment = {{ environment | tojson }};
     const { useEffect, useMemo, useRef, useState } = React;
-    const [hasBestPricePayload, setHasBestPricePayload] = useState(false);
-    const lastBestPricePayloadRef = useRef(null);
-    const lastBestPriceResultRef = useRef(null);
-    const [includeAlternates, setIncludeAlternates] = useState(true);
-    const [hasDocSummary, setHasDocSummary] = useState(false);
-    const lastDocSummaryRowsRef = useRef([]);
 
     function uid(prefix = "id") {
       return `${prefix}-${Math.random().toString(36).slice(2)}-${Date.now().toString(36)}`;
@@ -1788,6 +1782,15 @@
     }
 
     function ChatApp({ config, devMode, environment }) {
+      // State that was previously (incorrectly) initialized at module scope.
+      // Hooks must run within a React component; moving them here resolves
+      // the "Cannot read properties of null (reading 'useState')" error.
+      const [hasBestPricePayload, setHasBestPricePayload] = useState(false);
+      const lastBestPricePayloadRef = useRef(null);
+      const lastBestPriceResultRef = useRef(null);
+      const [includeAlternates, setIncludeAlternates] = useState(true);
+      const [hasDocSummary, setHasDocSummary] = useState(false);
+      const lastDocSummaryRowsRef = useRef([]);
       const [messages, setMessages] = useState(() => [
         {
           id: uid("intro"),
@@ -1814,6 +1817,21 @@
       const transcriptRef = useRef(null);
       const composerRef = useRef(null);
       const mentionAbortRef = useRef(null);
+      const conversationIdRef = useRef(null);
+      if (!conversationIdRef.current) {
+        conversationIdRef.current =
+          typeof crypto !== "undefined" && typeof crypto.randomUUID === "function"
+            ? crypto.randomUUID()
+            : `conv-${Date.now()}-${Math.random().toString(16).slice(2, 10)}`;
+      }
+      const conversationId = conversationIdRef.current;
+      const eventSourceRef = useRef(null);
+      const jobProgressMapRef = useRef(new Map());
+      const [sseConnected, setSseConnected] = useState(false);
+      const terminalJobStates = useMemo(
+        () => new Set(["processed", "processed_with_warnings", "failed"]),
+        []
+      );
 
       useEffect(() => {
         if (!transcriptRef.current) return;
@@ -1940,6 +1958,74 @@
         };
       }, [mentionContext, config.resolve, config.vendors]);
 
+      useEffect(() => {
+        if (!config.stream || !conversationId || typeof EventSource === "undefined") {
+          return;
+        }
+        try {
+          const streamUrl = `${config.stream}?conversation_id=${encodeURIComponent(conversationId)}`;
+          const source = new EventSource(streamUrl);
+          eventSourceRef.current = source;
+
+          const handleOpen = () => setSseConnected(true);
+          const handleError = () => setSseConnected(false);
+          const handleUpdate = (event) => {
+            try {
+              const payload = JSON.parse(event.data || "{}");
+              if (!payload || !payload.job_id) {
+                return;
+              }
+              const entry = jobProgressMapRef.current.get(payload.job_id);
+              if (!entry) {
+                return;
+              }
+              const progressId = entry.progressId;
+              const documentId = payload.document_id || entry.documentId || null;
+              const status =
+                payload.document_status ||
+                payload.job_status ||
+                entry.status ||
+                "processing";
+              updateProgressDocument(progressId, payload.job_id, {
+                id: documentId,
+                status,
+                message: typeof payload.message === "string" ? payload.message : entry.message || null,
+                offers_count: typeof payload.offers_count === "number" ? payload.offers_count : entry.offers_count,
+                warnings: Array.isArray(payload.warnings) ? payload.warnings : entry.warnings || [],
+                error: typeof payload.error === "string" ? payload.error : entry.error || null,
+              });
+              if (payload.job_status && terminalJobStates.has(payload.job_status)) {
+                jobProgressMapRef.current.set(payload.job_id, {
+                  ...entry,
+                  status: payload.job_status,
+                  completed: true,
+                  documentId,
+                });
+              }
+            } catch (err) {
+              console.warn("Failed to handle job update event", err);
+            }
+          };
+
+          source.addEventListener("open", handleOpen);
+          source.addEventListener("error", handleError);
+          source.addEventListener("job_update", handleUpdate);
+
+          return () => {
+            source.removeEventListener("open", handleOpen);
+            source.removeEventListener("error", handleError);
+            source.removeEventListener("job_update", handleUpdate);
+            source.close();
+            if (eventSourceRef.current === source) {
+              eventSourceRef.current = null;
+            }
+            setSseConnected(false);
+          };
+        } catch (err) {
+          console.warn("Failed to initialize job stream", err);
+        }
+      }, [config.stream, conversationId, terminalJobStates]);
+
       function updateProgress(messageId, stepId, status, text) {
         setMessages((prev) =>
           prev.map((msg) => {
@@ -1948,6 +2034,27 @@
               step.id === stepId ? { ...step, status } : step
             );
             return { ...msg, steps: nextSteps, text: text || msg.text };
+          })
+        );
+      }
+
+      function updateProgressDocument(messageId, jobId, updates) {
+        if (!jobId) {
+          return;
+        }
+        setMessages((prev) =>
+          prev.map((msg) => {
+            if (msg.id !== messageId) return msg;
+            const existing = Array.isArray(msg.documents) ? msg.documents.slice() : [];
+            const idx = existing.findIndex(
+              (doc) => doc.job_id === jobId || (updates.id && doc.id === updates.id)
+            );
+            if (idx >= 0) {
+              existing[idx] = { ...existing[idx], ...updates, job_id: jobId };
+            } else {
+              existing.push({ job_id: jobId, ...updates });
+            }
+            return { ...msg, documents: existing };
           })
         );
       }
@@ -1986,65 +2093,118 @@
         if (preferLLMEnabled) {
           form.append("prefer_llm", "true");
         }
-        const response = await fetch(config.upload, { method: "POST", body: form });
+        const headers = {};
+        if (conversationId) {
+          headers["X-Conversation-Id"] = conversationId;
+        }
+        const response = await fetch(config.upload, { method: "POST", body: form, headers });
         if (!response.ok) {
           throw new Error(`Upload failed: ${response.status}`);
         }
         const payload = await response.json();
-        const documentIds = [];
-        const summaries = [];
-        if (payload.document_id) {
-          documentIds.push(payload.document_id);
-          summaries.push({
-            id: payload.document_id,
-            file_name: payload.filename,
-            status: "processing",
-          });
+        const accepted = Array.isArray(payload.accepted) ? payload.accepted : [];
+        const summaries = accepted.map((item) => {
+          const docId = item.document_id || item.id || null;
+          const jobId = item.job_id || null;
+          const fileLabel = item.filename || item.document_id || "uploaded.xlsx";
+          if (jobId) {
+            jobProgressMapRef.current.set(jobId, {
+              progressId,
+              documentId: docId,
+              filename: fileLabel,
+              status: item.status || "queued",
+              message: null,
+              offers_count: null,
+              warnings: [],
+              error: null,
+            });
+          }
+          return {
+            id: docId,
+            job_id: jobId,
+            document_id: docId,
+            file_name: fileLabel,
+            status: item.status || "queued",
+          };
+        });
+
+        if (Array.isArray(payload.failed) && payload.failed.length) {
+          const failureMessages = payload.failed
+            .map(
+              (failure) =>
+                `${failure.filename || "document"}: ${failure.detail || "Upload failed"}`
+            )
+            .join("; ");
+          setErrorBanner(failureMessages);
         }
-        if (Array.isArray(payload.processed)) {
-          payload.processed.forEach((doc) => {
-            if (doc.document_id) {
-              documentIds.push(doc.document_id);
-              summaries.push({
-                id: doc.document_id,
-                file_name: doc.filename || doc.original_name || "uploaded.xlsx",
-                status: "processing",
-              });
-            }
-          });
-        }
+
         updateProgress(progressId, "upload", "done", "Documents uploaded – waiting for ingestion…");
-        setProgressDocuments(progressId, summaries);
-        return documentIds;
+        if (summaries.length) {
+          setProgressDocuments(progressId, summaries);
+        }
+        return accepted;
       }
 
-      async function pollDocuments(documentIds, progressId) {
-        if (!documentIds.length) return [];
+      async function pollJobs(jobSummaries, progressId) {
+        if (!Array.isArray(jobSummaries) || !jobSummaries.length) return [];
         const resolved = [];
-        for (const docId of documentIds) {
-          let statusPayload = null;
-          for (let attempt = 0; attempt < 15; attempt += 1) {
-            const response = await fetch(`${config.document}/${docId}`);
-            if (!response.ok) break;
-            statusPayload = await response.json();
-            if (!statusPayload || !statusPayload.status) break;
-            if (["processed", "processed_with_warnings", "failed"].includes(statusPayload.status)) {
+        for (const jobInfo of jobSummaries) {
+          const jobId = jobInfo.job_id;
+          const documentId = jobInfo.document_id || jobInfo.id;
+          if (!jobId || !documentId) {
+            continue;
+          }
+          let jobPayload = null;
+          const maxAttempts = sseConnected ? 6 : 15;
+          for (let attempt = 0; attempt < maxAttempts; attempt += 1) {
+            const response = await fetch(`${config.jobs}/${jobId}`);
+            if (!response.ok) {
               break;
             }
-            await new Promise((resolve) => setTimeout(resolve, 1500));
+            jobPayload = await response.json();
+            const currentStatus =
+              jobPayload.document_status || jobPayload.status || jobInfo.status || "processing";
+            updateProgressDocument(progressId, jobId, {
+              id: documentId,
+              status: currentStatus,
+              message:
+                typeof jobPayload.message === "string" ? jobPayload.message : jobInfo.message || null,
+              offers_count:
+                typeof jobPayload.offers_count === "number"
+                  ? jobPayload.offers_count
+                  : jobInfo.offers_count || null,
+              warnings: Array.isArray(jobPayload.warnings)
+                ? jobPayload.warnings
+                : jobInfo.warnings || [],
+              error:
+                typeof jobPayload.error === "string" ? jobPayload.error : jobInfo.error || null,
+            });
+            if (terminalJobStates.has(currentStatus)) {
+              jobProgressMapRef.current.set(jobId, {
+                ...(jobProgressMapRef.current.get(jobId) || {}),
+                progressId,
+                documentId,
+                status: currentStatus,
+                completed: true,
+              });
+              break;
+            }
+            await new Promise((resolve) =>
+              setTimeout(resolve, sseConnected ? 1200 : 1700)
+            );
           }
-          if (statusPayload) {
-            resolved.push(statusPayload);
+          const finalStatus =
+            jobPayload && (jobPayload.document_status || jobPayload.status)
+              ? jobPayload.document_status || jobPayload.status
+              : jobInfo.status;
+          if (finalStatus && terminalJobStates.has(finalStatus)) {
+            const docResponse = await fetch(`${config.document}/${documentId}`);
+            if (docResponse.ok) {
+              const docPayload = await docResponse.json();
+              resolved.push(docPayload);
+            }
           }
         }
-        setProgressDocuments(
-          progressId,
-          resolved.map((doc) => ({
-            id: doc.id,
-            file_name: doc.file_name,
-            status: doc.status,
-          }))
-        );
         return resolved;
       }
 
@@ -2386,8 +2546,13 @@
 
         try {
           if (shouldUploadAttachments) {
-            const docIds = await uploadFiles(attachments, vendorLabelForUploads, progressId, preferLLM);
-            resolvedDocuments = await pollDocuments(docIds, progressId);
+            const jobInfos = await uploadFiles(
+              attachments,
+              vendorLabelForUploads,
+              progressId,
+              preferLLM
+            );
+            resolvedDocuments = await pollJobs(jobInfos, progressId);
             shouldResetUploads = true;
           }
 
@@ -2461,6 +2626,8 @@
               recent_offers:
                 payload.recent_offers || payload.last_offers || payload.offers || [],
               ingestion_warnings: payload.ingestion_warnings || [],
+              whatsapp_metrics: payload.whatsapp_metrics || [],
+              whatsapp_media_failures: payload.whatsapp_media_failures || [],
             };
             setMessages((prev) => [...prev, diagnosticsMessage]);
             if (hasStep("format")) {
@@ -3595,6 +3762,8 @@
       const recentDocuments = (message.recent_documents || []).slice(0, 5);
       const recentOffers = (message.recent_offers || []).slice(0, 5);
       const ingestionWarnings = message.ingestion_warnings || [];
+      const whatsappMetrics = message.whatsapp_metrics || [];
+      const mediaFailures = message.whatsapp_media_failures || [];
 
       const formatValue = (value) => {
         if (value == null) return "—";
@@ -3606,6 +3775,28 @@
           }
         }
         return String(value);
+      };
+      const formatReason = (reason) => {
+        if (!reason) return "unknown";
+        const labels = {
+          too_large: "too large",
+          media_too_large: "too large",
+          storage_error: "storage error",
+          media_persist_failure: "storage failure",
+          media_metadata_persist_failure: "metadata failure",
+          metadata_error: "metadata failure",
+          media_unsupported: "unsupported type",
+          unsupported_type: "unsupported type",
+          rate_limited: "rate limited",
+          client_error: "client error",
+          server_error: "server error",
+          network_error: "network error",
+          unexpected_error: "unexpected error",
+          timeout: "timeout",
+          invalid_response: "invalid response",
+          empty_download: "empty download",
+        };
+        return labels[reason] || String(reason).replace(/_/g, " ");
       };
 
       return React.createElement(
@@ -3733,6 +3924,63 @@
                       { key: warning.document_id || label },
                       `${label}: ${messages}`
                     );
+                  })
+                )
+              )
+            : null,
+          whatsappMetrics.length
+            ? React.createElement(
+                "div",
+                { className: "diagnostics-section" },
+                React.createElement("h3", null, "WhatsApp ingest"),
+                React.createElement(
+                  "div",
+                  { className: "diagnostics-inline" },
+                  whatsappMetrics.map((metric) => {
+                    const key = `${metric.client_id || "client"}-${metric.chat_id || "chat"}`;
+                    const parts = [
+                      metric.client_id ? `client: ${metric.client_id}` : null,
+                      metric.chat_title
+                        ? `chat: ${metric.chat_title}`
+                        : metric.chat_id
+                        ? `chat: ${metric.chat_id}`
+                        : null,
+                      `created: ${metric.created}`,
+                      metric.deduped ? `deduped: ${metric.deduped}` : null,
+                      metric.errors ? `skipped: ${metric.errors}` : null,
+                      metric.media_uploaded ? `media uploaded: ${metric.media_uploaded}` : null,
+                      metric.media_deduped ? `media deduped: ${metric.media_deduped}` : null,
+                      metric.media_failed ? `media failed: ${metric.media_failed}` : null,
+                      metric.last_event_at ? `updated ${relativeTime(metric.last_event_at)}` : null,
+                    ].filter(Boolean);
+                    return React.createElement("span", { key }, parts.join(" • "));
+                  })
+                )
+              )
+            : null,
+          mediaFailures.length
+            ? React.createElement(
+                "div",
+                { className: "diagnostics-section" },
+                React.createElement("h3", null, "Recent media rejections"),
+                React.createElement(
+                  "div",
+                  { className: "diagnostics-inline" },
+                  mediaFailures.map((failure, index) => {
+                    const key = failure.timestamp
+                      ? `${failure.timestamp}-${index}`
+                      : `media-${index}`;
+                    const parts = [
+                      `reason: ${formatReason(failure.reason)}`,
+                      failure.chat_title
+                        ? `chat: ${failure.chat_title}`
+                        : failure.chat_id
+                        ? `chat: ${failure.chat_id}`
+                        : null,
+                      failure.client_id ? `client: ${failure.client_id}` : null,
+                      failure.timestamp ? `at ${relativeTime(failure.timestamp)}` : null,
+                    ].filter(Boolean);
+                    return React.createElement("span", { key }, parts.join(" • "));
                   })
                 )
               )

@@ -17,6 +17,7 @@
     <tr>
       <th>Chat ID</th>
       <th>Title</th>
+      <th>Vendor</th>
       <th>Last Message</th>
       <th>Messages</th>
       <th></th>
@@ -27,6 +28,13 @@
     <tr>
       <td>{{ c.id }}</td>
       <td>{{ c.title }}</td>
+      <td>
+        {% if c.vendor_name %}
+        <span class="chip">{{ c.vendor_name }}</span>
+        {% else %}
+        <span class="chip chip--muted">Unmapped</span>
+        {% endif %}
+      </td>
       <td>{{ c.last_message_at }}</td>
       <td>{{ c.count }}</td>
       <td>
@@ -40,4 +48,3 @@
 <div class="empty-state">No WhatsApp chats captured yet.</div>
 {% endif %}
 {% endblock %}
-

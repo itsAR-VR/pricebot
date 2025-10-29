@@ -1,0 +1,46 @@
+{
+  "mode": "load",
+  "collected_at": "2025-10-28T04:26:50Z",
+  "config": {
+    "count": 20,
+    "batch_size": 10,
+    "timeout": 10.0,
+    "sleep": 0.0
+  },
+  "latency": {
+    "min": 0.82,
+    "p50": 0.935,
+    "p95": 1.08,
+    "max": 1.1
+  },
+  "totals": {
+    "created": 170,
+    "deduped": 30,
+    "skipped": 0,
+    "error_rate": 0.0,
+    "dedupe_ratio": 0.15,
+    "status_counts": {
+      "200": 20
+    }
+  },
+  "diagnostics": {
+    "baseline": null,
+    "final": null,
+    "diff": {
+      "accepted": 200,
+      "created": 170,
+      "extracted": 162,
+      "errors": 5
+    },
+    "ingest_delay_seconds": 2.1,
+    "extraction_delay_seconds": 48.0,
+    "failed": false
+  },
+  "slo": {
+    "breaches": [],
+    "p95_threshold": 60.0,
+    "error_rate_threshold": 0.02,
+    "extracted_ratio_threshold": 0.95,
+    "offer_success_rate": 0.953
+  }
+}

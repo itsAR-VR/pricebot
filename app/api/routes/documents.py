@@ -5,14 +5,13 @@ import tempfile
 from datetime import datetime, timezone
 from io import BytesIO
 from pathlib import Path
-from typing import Annotated, Any, Optional
+from typing import Annotated, Optional
 from uuid import UUID, uuid4
 
-from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, UploadFile
-from fastapi.responses import FileResponse, Response
+from fastapi import APIRouter, Depends, File, Form, Header, HTTPException, Query, UploadFile
+from fastapi.responses import FileResponse, JSONResponse, Response
 import pandas as pd
 from pydantic import BaseModel
-from sqlalchemy import delete
 from sqlalchemy.exc import IntegrityError, SQLAlchemyError
 from sqlmodel import Session, select
 
@@ -20,8 +19,12 @@ from app.api.deps import get_db
 from app.api.routes.offers import OfferOut
 from app.core.config import settings
 from app.db import models
-from app.ingestion import registry
-from app.services.offers import OfferIngestionService
+from app.services.document_ingestion import (
+    DocumentIngestResult,
+    _utc_now,
+    ingest_document as run_document_ingest,
+)
+from app.services.ingestion_jobs import ingestion_job_runner
 
 BASE_DIR = Path(__file__).resolve().parents[3]
 TEMPLATE_PATH = BASE_DIR / "storage" / "templates" / "vendor_price_template.xlsx"
@@ -40,50 +43,6 @@ def _build_vendor_template_bytes() -> bytes:
     buffer.seek(0)
     return buffer.getvalue()
 
-
-
-def _build_ingestion_context(
-    processor_name: str,
-    vendor_name: str,
-    prefer_llm: Optional[bool] = None,
-) -> dict[str, Any]:
-    """Prepare processor-specific context hints for ingestion."""
-
-    context: dict[str, Any] = {"vendor_name": vendor_name}
-
-    if processor_name == "whatsapp_text":
-        context.update(
-            {
-                "prefer_llm": True,
-                "llm_instructions": (
-                    "Treat this as a WhatsApp business chat. Extract only concrete product offers with "
-                    "explicit prices, quantities, or deal terms. Ignore greetings, transfers, or discussion."
-                ),
-            }
-        )
-    elif processor_name == "document_text":
-        context.update(
-            {
-                "prefer_llm": True,
-                "llm_instructions": (
-                    "Treat the content as a vendor price sheet. Capture product names, variants, quantities, "
-                    "and unit prices from each listed item, ignoring marketing copy or logistics notes."
-                ),
-            }
-        )
-
-    if prefer_llm:
-        context["prefer_llm"] = True
-
-    return context
-
-
-
-def _utc_now() -> datetime:
-    """Return a timezone-naive UTC timestamp."""
-
-    now = datetime.now(timezone.utc)
-    return now.replace(tzinfo=None)
 
 
 _SANITIZE_PATTERN = re.compile(r"[^A-Za-z0-9_.-]")
@@ -188,112 +147,6 @@ def _determine_processor(file_ext: str, override: Optional[str]) -> str:
     )
 
 
-def _clear_existing_offers(session: Session, source_doc: models.SourceDocument) -> None:
-    offer_ids = [offer.id for offer in source_doc.offers or []]
-    if not offer_ids:
-        return
-
-    session.exec(
-        delete(models.PriceHistory).where(models.PriceHistory.source_offer_id.in_(offer_ids))
-    )
-    session.exec(delete(models.Offer).where(models.Offer.id.in_(offer_ids)))
-    session.flush()
-
-
-def _run_ingestion(
-    *,
-    session: Session,
-    source_doc: models.SourceDocument,
-    processor_name: str,
-    vendor_name: str,
-    file_path: Path,
-    prefer_llm: Optional[bool] = None,
-    clear_existing: bool = False,
-) -> DocumentIngestResponse:
-    try:
-        processor_instance = registry.get(processor_name)
-    except KeyError as exc:  # pragma: no cover - defensive
-        raise HTTPException(
-            status_code=400,
-            detail=f"Unknown processor: {processor_name}. Available: {list(registry.processors.keys())}",
-        ) from exc
-
-    if not file_path.exists():
-        raise HTTPException(status_code=404, detail="Stored document file is missing")
-
-    if clear_existing:
-        session.refresh(source_doc)
-        _clear_existing_offers(session, source_doc)
-
-    now_utc = _utc_now()
-    source_doc.status = "processing"
-    source_doc.ingest_started_at = now_utc
-    source_doc.ingest_completed_at = None
-    session.add(source_doc)
-    session.flush()
-
-    try:
-        context = _build_ingestion_context(processor_name, vendor_name, prefer_llm)
-        result = processor_instance.process(file_path, context=context)
-
-        offer_service = OfferIngestionService(session)
-        persisted = offer_service.ingest(
-            offers=result.offers,
-            vendor_name=vendor_name,
-            source_document=source_doc,
-        )
-
-        if persisted and not source_doc.vendor_id:
-            source_doc.vendor_id = persisted[0].vendor_id
-
-        if result.errors:
-            logger.warning(
-                "Ingestion warnings for document %s: %s",
-                source_doc.id,
-                result.errors,
-            )
-            extra = source_doc.extra.copy() if source_doc.extra else {}
-            extra["ingestion_errors"] = result.errors
-            source_doc.extra = extra
-        elif source_doc.extra and "ingestion_errors" in source_doc.extra:
-            extra = source_doc.extra.copy()
-            extra.pop("ingestion_errors", None)
-            source_doc.extra = extra
-
-        source_doc.status = "processed" if not result.errors else "processed_with_warnings"
-        source_doc.ingest_completed_at = _utc_now()
-        session.add(source_doc)
-        session.commit()
-        warnings = result.errors or []
-
-        return DocumentIngestResponse(
-            status=source_doc.status,
-            message=f"Processed {len(persisted)} offers",
-            document_id=str(source_doc.id),
-            offers_count=len(persisted),
-            warnings=warnings,
-        )
-
-    except Exception as exc:
-        session.rollback()
-        logger.exception("Document ingestion failed for %s", source_doc.id)
-        source_doc.status = "failed"
-        source_doc.ingest_completed_at = _utc_now()
-        extra = source_doc.extra.copy() if source_doc.extra else {}
-        extra.setdefault("errors", [])
-        extra["errors"] = [str(exc)]
-        source_doc.extra = extra
-        session.add(source_doc)
-        try:
-            session.commit()
-        except SQLAlchemyError:  # pragma: no cover - defensive
-            session.rollback()
-            logger.exception(
-                "Failed to persist failure status for document %s", source_doc.id
-            )
-        raise HTTPException(status_code=500, detail=f"Processing failed: {str(exc)}")
-
-
 async def _process_single_upload(
     upload_file: UploadFile,
     *,
@@ -302,7 +155,8 @@ async def _process_single_upload(
     session: Session,
     storage_root: Path,
     prefer_llm: Optional[bool],
-) -> dict:
+    conversation_id: Optional[str],
+) -> tuple[models.SourceDocument, models.IngestionJob, dict]:
     original_name = Path(upload_file.filename or "uploaded_file").name
     file_ext = Path(original_name).suffix.lower()
     processor_name = _determine_processor(file_ext, processor_override)
@@ -341,13 +195,14 @@ async def _process_single_upload(
         file_name=original_name,
         file_type=file_ext or processor_name,
         storage_path=storage_path_value,
-        status="processing",
-        ingest_started_at=now_utc,
+        status="queued",
+        ingest_started_at=None,
+        ingest_completed_at=None,
         extra=metadata_extra,
     )
     session.add(source_doc)
     try:
-        session.commit()
+        session.flush()
     except IntegrityError as exc:
         session.rollback()
         logger.exception("Failed to persist source document metadata for %s", storage_path_value)
@@ -363,30 +218,56 @@ async def _process_single_upload(
             status_code=500,
             detail="Failed to persist document metadata due to a database error",
         ) from exc
-    session.refresh(source_doc)
-    logger.info("Source document persisted: id=%s path=%s", source_doc.id, storage_path_value)
 
-    ingestion_response = _run_ingestion(
-        session=session,
-        source_doc=source_doc,
-        processor_name=processor_name,
-        vendor_name=vendor_name,
-        file_path=file_path,
-        prefer_llm=prefer_llm,
-        clear_existing=False,
+    job_logs: dict[str, object] = {
+        "vendor_name": vendor_name,
+        "filename": original_name,
+    }
+    if prefer_llm is not None:
+        job_logs["prefer_llm"] = bool(prefer_llm)
+    if conversation_id:
+        job_logs["conversation_id"] = conversation_id
+
+    job = models.IngestionJob(
+        source_document_id=source_doc.id,
+        processor=processor_name,
+        status="queued",
+        logs=job_logs,
     )
+    session.add(job)
+    try:
+        session.commit()
+    except SQLAlchemyError as exc:
+        session.rollback()
+        logger.exception("Failed to persist ingestion job for document %s", source_doc.id)
+        _remove_file_if_exists(file_path)
+        raise HTTPException(status_code=500, detail="Failed to persist ingestion job metadata") from exc
 
-    payload = ingestion_response.model_dump()
-    payload["filename"] = original_name
-    return payload
+    session.refresh(source_doc)
+    session.refresh(job)
+    logger.info("Queued ingestion job %s for document %s", job.id, source_doc.id)
+    ingestion_job_runner.enqueue(job.id)
+
+    summary = {
+        "job_id": str(job.id),
+        "document_id": str(source_doc.id),
+        "status": job.status,
+        "processor": job.processor,
+        "filename": original_name,
+        "vendor_name": vendor_name,
+        "created_at": job.created_at.isoformat() + "Z" if job.created_at else None,
+    }
+
+    return source_doc, job, summary
 
 @router.post("/upload", summary="Upload and process price documents")
 async def upload_document(
-    files: list[UploadFile] | None = File(default=None),
+    files: list[UploadFile] = File(default=[]),
     file: UploadFile | None = File(default=None),
     vendor_name: str = Form(...),
     processor: Optional[str] = Form(None),
     prefer_llm: Optional[bool] = Form(None),
+    conversation_id: Optional[str] = Header(default=None, alias="X-Conversation-Id"),
     session: Session = Depends(get_db),
 ) -> dict:
     """
@@ -408,7 +289,7 @@ async def upload_document(
         raise HTTPException(status_code=400, detail="No files were provided for upload")
 
     storage_root = _ensure_storage_directory(Path(settings.ingestion_storage_dir))
-    results: list[dict] = []
+    accepted: list[dict] = []
     errors: list[dict] = []
 
     for upload in uploads:
@@ -421,15 +302,16 @@ async def upload_document(
         )
 
         try:
-            result = await _process_single_upload(
+            _, _, summary = await _process_single_upload(
                 upload,
                 vendor_name=vendor_name,
                 processor_override=processor,
                 session=session,
                 storage_root=storage_root,
                 prefer_llm=prefer_llm,
+                conversation_id=conversation_id,
             )
-            results.append(result)
+            accepted.append(summary)
         except HTTPException as exc:
             errors.append(
                 {
@@ -446,24 +328,25 @@ async def upload_document(
                 }
             )
 
-    if errors and not results:
+    if errors and not accepted:
         aggregated = "; ".join(f"{err['filename']}: {err['detail']}" for err in errors)
         raise HTTPException(status_code=500, detail=f"Processing failed: {aggregated}")
 
-    status = "success" if not errors else "partial_success"
-    message = f"Processed {len(results)} document(s)" if results else "Processed 0 document(s)"
-    offers_total = sum(int(item.get("offers_count", 0)) for item in results) if results else 0
+    status = "accepted" if not errors else "partial"
+    message = f"Queued {len(accepted)} document(s) for ingestion"
 
-    return {
+    payload: dict[str, object] = {
         "status": status,
         "message": message,
-        "processed_count": len(results),
+        "accepted_count": len(accepted),
         "failed_count": len(errors),
-        "processed": results,
-        "errors": errors,
-        # Convenience for single-file flows/tests
-        "offers_count": offers_total,
+        "accepted": accepted,
+        "failed": errors,
     }
+    if conversation_id:
+        payload["conversation_id"] = conversation_id
+
+    return JSONResponse(status_code=202, content=payload)
 
 
 
@@ -480,6 +363,55 @@ class DocumentOut(BaseModel):
 
 class DocumentDetail(DocumentOut):
     offers: list[OfferOut]
+    jobs: list["IngestionJobStatus"] = []
+
+
+class IngestionJobSummary(BaseModel):
+    job_id: UUID
+    document_id: UUID
+    status: str
+    processor: str
+    filename: Optional[str] = None
+    vendor_name: Optional[str] = None
+    created_at: Optional[datetime] = None
+    updated_at: Optional[datetime] = None
+
+
+class IngestionJobStatus(IngestionJobSummary):
+    message: Optional[str] = None
+    offers_count: Optional[int] = None
+    warnings: list[str] = []
+    error: Optional[str] = None
+    document_status: Optional[str] = None
+
+
+def _job_status_from_model(
+    job: models.IngestionJob,
+    document: Optional[models.SourceDocument] = None,
+) -> IngestionJobStatus:
+    logs = job.logs or {}
+    warnings = logs.get("warnings") or []
+    if not isinstance(warnings, list):
+        warnings = [str(warnings)]
+    message = logs.get("message")
+    error = logs.get("error")
+    filename = logs.get("filename")
+    vendor_name = logs.get("vendor_name")
+    return IngestionJobStatus(
+        job_id=job.id,
+        document_id=job.source_document_id,
+        status=job.status,
+        processor=job.processor,
+        filename=filename if isinstance(filename, str) else None,
+        vendor_name=vendor_name if isinstance(vendor_name, str) else None,
+        created_at=job.created_at,
+        updated_at=job.updated_at,
+        message=message if isinstance(message, str) else None,
+        offers_count=logs.get("offers_count"),
+        warnings=warnings,
+        error=error if isinstance(error, str) else None,
+        document_status=document.status if document else None,
+    )
 
 
 class DocumentIngestRequest(BaseModel):
@@ -488,12 +420,7 @@ class DocumentIngestRequest(BaseModel):
     force: bool = False
 
 
-class DocumentIngestResponse(BaseModel):
-    status: str
-    message: str
-    document_id: str
-    offers_count: int
-    warnings: list[str] = []
+DocumentIngestResponse = DocumentIngestResult
 
 
 class RelatedDocument(BaseModel):
@@ -618,6 +545,13 @@ def get_document(document_id: UUID, session: Session = Depends(get_db)) -> Docum
         for offer in document.offers or []
     ]
 
+    jobs = session.exec(
+        select(models.IngestionJob)
+        .where(models.IngestionJob.source_document_id == document.id)
+        .order_by(models.IngestionJob.created_at.desc())
+    ).all()
+    job_statuses = [_job_status_from_model(job, document) for job in jobs]
+
     return DocumentDetail(
         id=document.id,
         file_name=document.file_name,
@@ -628,6 +562,7 @@ def get_document(document_id: UUID, session: Session = Depends(get_db)) -> Docum
         offer_count=len(offers),
         metadata=document.extra,
         offers=offers,
+        jobs=job_statuses,
     )
 
 
@@ -679,11 +614,24 @@ def ingest_document(
         )
 
     should_clear = bool(document.offers or [])
-    return _run_ingestion(
+    prefer_llm_flag = (
+        document.extra.get("prefer_llm") if document.extra and "prefer_llm" in document.extra else None
+    )
+    return run_document_ingest(
         session=session,
         source_doc=document,
         processor_name=processor_name,
         vendor_name=vendor_name,
         file_path=file_path,
+        prefer_llm=prefer_llm_flag if prefer_llm_flag is not None else None,
         clear_existing=should_clear,
     )
+
+
+@router.get("/jobs/{job_id}", response_model=IngestionJobStatus, summary="Get ingestion job status")
+def get_ingestion_job(job_id: UUID, session: Session = Depends(get_db)) -> IngestionJobStatus:
+    job = session.get(models.IngestionJob, job_id)
+    if not job:
+        raise HTTPException(status_code=404, detail="Job not found")
+    document = session.get(models.SourceDocument, job.source_document_id) if job.source_document_id else None
+    return _job_status_from_model(job, document)

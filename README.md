@@ -28,7 +28,7 @@ uvicorn app.main:app --reload
 python -m app.cli.ingest vendor_prices.xlsx --vendor "Vendor Name"
 ```
 
-**[📖 Full Quickstart Guide](docs/QUICKSTART.md)** | **[🔌 API Reference](docs/API_REFERENCE.md)** | **[🆘 Help Topics](docs/HELP_TOPICS.md)** | **[📋 Project Plan](docs/PROJECT_PLAN.md)**
+**[📖 Full Quickstart Guide](docs/QUICKSTART.md)** | **[🔌 API Reference](docs/API_REFERENCE.md)** | **[🆘 Help Topics](docs/HELP_TOPICS.md)** | **[📋 Project Plan](docs/PROJECT_PLAN.md)** | **[📨 WhatsApp Ingest Contract](docs/whatsapp_ingest_contract.md)**
 
 ---
 

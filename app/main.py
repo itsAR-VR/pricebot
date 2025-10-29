@@ -11,7 +11,17 @@ from fastapi.middleware.cors import CORSMiddleware
 from app.core.config import settings
 from app.core.log_buffer import install_log_buffer, record_tool_call
 from app.db.session import init_db
-from app.api.routes import chat_tools, documents, health, offers, price_history, products, vendors
+from app.api.routes import (
+    chat_stream,
+    chat_tools,
+    documents,
+    health,
+    metrics,
+    offers,
+    price_history,
+    products,
+    vendors,
+)
 from app.api.routes import integrations_whatsapp
 from app.ui import views as operator_views
 
@@ -65,12 +75,14 @@ elif settings.cors_allowed_origins:
     )
 
 app.include_router(health.router)
+app.include_router(metrics.router)
 app.include_router(offers.router)
 app.include_router(products.router)
 app.include_router(vendors.router)
 app.include_router(price_history.router)
 app.include_router(documents.router)
 app.include_router(chat_tools.router)
+app.include_router(chat_stream.router)
 app.include_router(operator_views.router)
 app.include_router(operator_views.upload_router)
 app.include_router(operator_views.chat_router)
