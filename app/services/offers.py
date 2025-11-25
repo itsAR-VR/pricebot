@@ -159,8 +159,18 @@ class OfferIngestionService:
         return product
 
     def _record_price_history(self, offer: models.Offer) -> None:
-        """Maintain price history spans for the given offer."""
+        """Maintain price history spans for the given offer.
 
+        Hardened logic:
+        1. Find any open (valid_to=NULL) price span for this product/vendor
+        2. If same price/currency and newer timestamp: skip (no change)
+        3. If price changed: close the old span and create a new one
+        4. Handle out-of-order insertions by setting valid_to on new entry
+        5. Log price changes for auditing
+        """
+        captured_at = self._normalize_utc(offer.captured_at)
+
+        # Find the currently open price span (if any)
         statement = (
             select(models.PriceHistory)
             .where(
@@ -172,21 +182,70 @@ class OfferIngestionService:
         )
         open_entry = self.session.exec(statement).first()
 
-        captured_at = self._normalize_utc(offer.captured_at)
-
         if open_entry:
-            open_entry.valid_from = self._normalize_utc(open_entry.valid_from)
-            if open_entry.valid_to is not None:
-                open_entry.valid_to = self._normalize_utc(open_entry.valid_to)
+            open_entry_valid_from = self._normalize_utc(open_entry.valid_from)
+
+            # Same price/currency - no change needed if this is newer or same time
             if (
                 open_entry.price == offer.price
                 and open_entry.currency == offer.currency
-                and captured_at >= open_entry.valid_from
+                and captured_at >= open_entry_valid_from
             ):
+                logger.debug(
+                    "Price unchanged for product=%s vendor=%s (price=%.2f %s)",
+                    offer.product_id,
+                    offer.vendor_id,
+                    offer.price,
+                    offer.currency,
+                )
                 return
 
-            if captured_at >= open_entry.valid_from:
+            # Price changed - close the old span if this offer is newer
+            if captured_at >= open_entry_valid_from:
+                logger.info(
+                    "Price change detected: product=%s vendor=%s old=%.2f new=%.2f %s",
+                    offer.product_id,
+                    offer.vendor_id,
+                    open_entry.price,
+                    offer.price,
+                    offer.currency,
+                )
                 open_entry.valid_to = captured_at
+                self.session.add(open_entry)
+
+        # Check for uniqueness constraint: valid_from must be unique per product/vendor
+        existing_at_time = self.session.exec(
+            select(models.PriceHistory).where(
+                (models.PriceHistory.product_id == offer.product_id)
+                & (models.PriceHistory.vendor_id == offer.vendor_id)
+                & (models.PriceHistory.valid_from == captured_at)
+            )
+        ).first()
+
+        if existing_at_time:
+            # Already have an entry at this exact time - update it instead
+            logger.debug(
+                "Updating existing price history entry at %s for product=%s",
+                captured_at,
+                offer.product_id,
+            )
+            existing_at_time.price = offer.price
+            existing_at_time.currency = offer.currency
+            existing_at_time.source_offer_id = offer.id
+            self.session.add(existing_at_time)
+            return
+
+        # Determine valid_to for the new entry
+        # If this is an out-of-order insertion (before the open entry), close this new span
+        new_valid_to = None
+        if open_entry and captured_at < self._normalize_utc(open_entry.valid_from):
+            # Out-of-order: this is an older price, set its end to when the next price started
+            new_valid_to = self._normalize_utc(open_entry.valid_from)
+            logger.debug(
+                "Out-of-order price insertion: setting valid_to=%s for product=%s",
+                new_valid_to,
+                offer.product_id,
+            )
 
         history_entry = models.PriceHistory(
             product_id=offer.product_id,
@@ -194,10 +253,17 @@ class OfferIngestionService:
             price=offer.price,
             currency=offer.currency,
             valid_from=captured_at,
-            valid_to=open_entry.valid_from if open_entry and captured_at < open_entry.valid_from else None,
+            valid_to=new_valid_to,
             source_offer_id=offer.id,
         )
         self.session.add(history_entry)
+        logger.debug(
+            "Created price history entry: product=%s vendor=%s price=%.2f valid_from=%s",
+            offer.product_id,
+            offer.vendor_id,
+            offer.price,
+            captured_at,
+        )
 
     @staticmethod
     def _normalize_utc(value: datetime) -> datetime:

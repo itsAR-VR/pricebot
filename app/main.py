@@ -87,6 +87,7 @@ app.include_router(operator_views.router)
 app.include_router(operator_views.upload_router)
 app.include_router(operator_views.chat_router)
 app.include_router(operator_views.whatsapp_router)
+app.include_router(operator_views.aliases_router)
 app.include_router(integrations_whatsapp.router)
 
 

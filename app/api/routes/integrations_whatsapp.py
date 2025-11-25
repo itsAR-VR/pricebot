@@ -19,6 +19,7 @@ from app.core.metrics import metrics
 from app.core.rate_limit import TokenBucketLimiter
 from app.services.whatsapp_ingest import WhatsAppIngestService
 from app.services.whatsapp_extract import WhatsAppExtractionService
+from app.services.whatsapp_outbound import WhatsAppOutboundService
 from app.services.whatsapp_scheduler import scheduler
 from app.db import models
 from sqlmodel import select
@@ -832,3 +833,55 @@ def set_chat_vendor(
     if not vendor_name and chat.vendor:
         vendor_name = chat.vendor.name
     return ChatVendorMappingResponse(id=chat.id, vendor_id=chat.vendor_id, vendor_name=vendor_name)
+
+
+# ------------------------------------------------------------------
+# Outbound Messaging
+# ------------------------------------------------------------------
+
+
+class SendMessageRequest(BaseModel):
+    """Request payload for sending an outbound WhatsApp message."""
+
+    text: str = Field(..., min_length=1, max_length=4000, description="Message text to send")
+
+
+class SendMessageResponse(BaseModel):
+    """Response from sending an outbound message."""
+
+    success: bool
+    message_id: str | None = None
+    chat_title: str | None = None
+    status: str | None = None
+    error: str | None = None
+
+
+@router.post(
+    "/chats/{chat_id}/send",
+    response_model=SendMessageResponse,
+    summary="Send message to WhatsApp chat",
+    description="Send an outbound message to a WhatsApp chat. "
+    "Currently uses a mock relay that records the message to the database.",
+)
+def send_message(
+    chat_id: UUID,
+    payload: SendMessageRequest,
+    db: Session = Depends(get_db),
+) -> SendMessageResponse:
+    """Send an outbound message to a WhatsApp chat.
+
+    This endpoint:
+    1. Validates the chat exists
+    2. Records the message in the database with is_outgoing=True
+    3. Attempts to send via relay (currently mocked)
+
+    Returns success status and message details.
+    """
+    chat = db.get(models.WhatsAppChat, chat_id)
+    if not chat:
+        raise HTTPException(status_code=404, detail="chat not found")
+
+    svc = WhatsAppOutboundService(db)
+    result = svc.send_text(chat_id, payload.text)
+
+    return SendMessageResponse(**result)

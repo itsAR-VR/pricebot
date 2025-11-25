@@ -21,6 +21,7 @@ router = APIRouter(prefix="/admin", tags=["operator"], include_in_schema=False)
 upload_router = APIRouter(tags=["upload"], include_in_schema=False)
 chat_router = APIRouter(tags=["chat"], include_in_schema=False)
 whatsapp_router = APIRouter(prefix="/admin/whatsapp", tags=["operator"], include_in_schema=False)
+aliases_router = APIRouter(prefix="/admin/aliases", tags=["operator"], include_in_schema=False)
 
 _templates = Jinja2Templates(directory=str(Path(__file__).resolve().parent.parent / "templates"))
 
@@ -231,3 +232,96 @@ async def whatsapp_chat_detail(request: Request, chat_id: UUID, session: Session
         "chat_vendor_endpoint": f"/integrations/whatsapp/chats/{chat.id}/vendor",
     }
     return _templates.TemplateResponse(request, "whatsapp_chat_detail.html", context)
+
+
+# ------------------------------------------------------------------
+# Alias Management UI (P1)
+# ------------------------------------------------------------------
+
+
+@aliases_router.get("", response_class=HTMLResponse)
+async def aliases_dashboard(
+    request: Request,
+    session: Session = Depends(get_db),
+    q: Optional[str] = None,
+    product_id: Optional[UUID] = None,
+    has_embedding: Optional[bool] = None,
+) -> HTMLResponse:
+    """Render the alias management dashboard."""
+    stmt = select(models.ProductAlias)
+
+    if q:
+        pattern = f"%{q.lower()}%"
+        stmt = stmt.where(func.lower(models.ProductAlias.alias_text).like(pattern))
+
+    if product_id:
+        stmt = stmt.where(models.ProductAlias.product_id == product_id)
+
+    if has_embedding is not None:
+        if has_embedding:
+            stmt = stmt.where(models.ProductAlias.embedding.isnot(None))
+        else:
+            stmt = stmt.where(models.ProductAlias.embedding.is_(None))
+
+    stmt = stmt.order_by(models.ProductAlias.alias_text).limit(200)
+    aliases = session.exec(stmt).all()
+
+    # Get stats
+    total_count = session.exec(
+        select(func.count()).select_from(models.ProductAlias)
+    ).one()
+    total = int(total_count[0] if isinstance(total_count, tuple) else total_count)
+
+    with_embedding_count = session.exec(
+        select(func.count())
+        .select_from(models.ProductAlias)
+        .where(models.ProductAlias.embedding.isnot(None))
+    ).one()
+    with_embedding = int(
+        with_embedding_count[0]
+        if isinstance(with_embedding_count, tuple)
+        else with_embedding_count
+    )
+
+    rows = [
+        {
+            "id": alias.id,
+            "product_id": alias.product_id,
+            "product_name": alias.product.canonical_name if alias.product else "Unknown",
+            "alias_text": alias.alias_text,
+            "source_vendor": alias.source_vendor.name if alias.source_vendor else None,
+            "has_embedding": alias.embedding is not None,
+        }
+        for alias in aliases
+    ]
+
+    # Get products for filter dropdown
+    products = session.exec(
+        select(models.Product).order_by(models.Product.canonical_name).limit(100)
+    ).all()
+    product_options = [{"id": p.id, "name": p.canonical_name} for p in products]
+
+    context = {
+        "request": request,
+        "title": "Product Aliases",
+        "subtitle": "Manage product aliases for improved search matching.",
+        "aliases": rows,
+        "products": product_options,
+        "filters": {
+            "q": q,
+            "product_id": str(product_id) if product_id else None,
+            "has_embedding": has_embedding,
+        },
+        "stats": {
+            "total": total,
+            "with_embedding": with_embedding,
+            "without_embedding": total - with_embedding,
+        },
+        "api_endpoints": {
+            "create": "/products/{product_id}/aliases",
+            "update": "/products/{product_id}/aliases/{alias_id}",
+            "delete": "/products/{product_id}/aliases/{alias_id}",
+            "list_all": "/products/aliases/all",
+        },
+    }
+    return _templates.TemplateResponse(request, "aliases_dashboard.html", context)

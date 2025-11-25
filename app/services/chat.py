@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import logging
 from dataclasses import dataclass
 from datetime import datetime
 from typing import Iterable
@@ -12,6 +13,13 @@ from sqlmodel import Session, select
 
 from app.db import models
 from app.core.config import settings
+
+logger = logging.getLogger(__name__)
+
+# Embedding model and vector search constants
+EMBEDDING_MODEL = "text-embedding-3-small"
+VECTOR_SEARCH_THRESHOLD = 3  # Trigger vector search if SQL returns fewer results
+VECTOR_SIMILARITY_MIN = 0.3  # Minimum similarity score to include in results
 
 
 @dataclass
@@ -124,6 +132,94 @@ class ChatLookupService:
             expr = func.replace(expr, ch, " ")
         return expr
 
+    # ------------------------------------------------------------------
+    # Vector/Semantic Search Methods
+    # ------------------------------------------------------------------
+    def _get_query_embedding(self, query: str) -> list[float] | None:
+        """Generate an embedding vector for the search query.
+
+        Returns None if OpenAI is not configured or on any error.
+        """
+        if not settings.enable_openai or not settings.openai_api_key:
+            return None
+
+        try:
+            client = self._ensure_llm_client()
+            response = client.embeddings.create(
+                model=EMBEDDING_MODEL,
+                input=query,
+            )
+            return response.data[0].embedding
+        except Exception as exc:
+            logger.warning("Failed to generate query embedding: %s", exc)
+            return None
+
+    def _cosine_similarity(self, vec_a: list[float], vec_b: list[float]) -> float:
+        """Calculate cosine similarity between two vectors using numpy."""
+        try:
+            import numpy as np
+        except ImportError:
+            logger.warning("numpy not installed, cannot calculate cosine similarity")
+            return 0.0
+
+        a = np.array(vec_a)
+        b = np.array(vec_b)
+        dot_product = np.dot(a, b)
+        norm_a = np.linalg.norm(a)
+        norm_b = np.linalg.norm(b)
+
+        if norm_a == 0 or norm_b == 0:
+            return 0.0
+
+        return float(dot_product / (norm_a * norm_b))
+
+    def _vector_search(
+        self,
+        query_embedding: list[float],
+        *,
+        limit: int = 5,
+        exclude_product_ids: set[UUID] | None = None,
+    ) -> list[tuple[UUID, float]]:
+        """Find products by vector similarity search.
+
+        Returns list of (product_id, similarity_score) tuples sorted by score descending.
+        """
+        exclude_ids = exclude_product_ids or set()
+
+        # Fetch all aliases that have embeddings
+        stmt = select(models.ProductAlias).where(models.ProductAlias.embedding.isnot(None))
+        aliases = self.session.exec(stmt).all()
+
+        if not aliases:
+            logger.debug("No aliases with embeddings found for vector search")
+            return []
+
+        # Calculate similarity scores
+        scores: list[tuple[UUID, float]] = []
+        seen_products: set[UUID] = set()
+
+        for alias in aliases:
+            if alias.product_id in exclude_ids or alias.product_id in seen_products:
+                continue
+
+            if alias.embedding:
+                similarity = self._cosine_similarity(query_embedding, alias.embedding)
+                scores.append((alias.product_id, similarity))
+                seen_products.add(alias.product_id)
+
+        # Sort by similarity score descending and take top results
+        scores.sort(key=lambda x: x[1], reverse=True)
+        top_results = scores[:limit]
+
+        if top_results:
+            logger.info(
+                "Vector search triggered - found %d candidates (top score: %.3f)",
+                len(top_results),
+                top_results[0][1] if top_results else 0,
+            )
+
+        return top_results
+
     def resolve_products(
         self,
         query: str,
@@ -227,12 +323,39 @@ class ChatLookupService:
         has_more = len(id_rows) > limit
         product_ids = [row[0] if isinstance(row, tuple) else row for row in id_rows[:limit]]
 
+        # ------------------------------------------------------------------
+        # Vector Search Fallback: If SQL returns < 3 results, try semantic search
+        # ------------------------------------------------------------------
+        vector_product_ids: list[UUID] = []
+        if len(product_ids) < VECTOR_SEARCH_THRESHOLD and settings.enable_openai:
+            query_embedding = self._get_query_embedding(normalized_query)
+            if query_embedding:
+                # Exclude products already found by SQL
+                exclude_ids = set(product_ids)
+                vector_results = self._vector_search(
+                    query_embedding,
+                    limit=5,
+                    exclude_product_ids=exclude_ids,
+                )
+                # Filter by minimum similarity threshold
+                vector_product_ids = [
+                    pid for pid, score in vector_results if score >= VECTOR_SIMILARITY_MIN
+                ]
+                # Merge vector results with SQL results
+                product_ids = list(product_ids) + vector_product_ids
+                logger.debug(
+                    "Merged %d SQL results with %d vector results",
+                    len(product_ids) - len(vector_product_ids),
+                    len(vector_product_ids),
+                )
+
         if not product_ids:
             return ProductMatchPage(matches=[], total=0 if include_total else len(product_ids), has_more=False)
 
         product_statement = select(models.Product).where(models.Product.id.in_(product_ids))
         products = self.session.exec(product_statement).all()
         product_map = {product.id: product for product in products}
+        vector_product_id_set = set(vector_product_ids)  # Track which came from vector search
 
         matches: list[ProductMatch] = []
         for product_id in product_ids:
@@ -240,8 +363,12 @@ class ChatLookupService:
             if not product:
                 continue
 
+            # Determine match source
             source = "unknown"
-            if product.canonical_name and normalized_lower in product.canonical_name.lower():
+            if product_id in vector_product_id_set:
+                # This product came from vector/semantic search
+                source = "vector_search"
+            elif product.canonical_name and normalized_lower in product.canonical_name.lower():
                 source = "canonical_name"
             elif product.model_number and normalized_lower in (product.model_number or "").lower():
                 source = "model_number"
