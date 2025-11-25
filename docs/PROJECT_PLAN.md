@@ -39,6 +39,14 @@ References:
 - ✅ Send endpoint: `POST /integrations/whatsapp/chats/{chat_id}/send`
 - ✅ Media storage (Local, S3, GCS) via `app/services/media_storage.py`
 
+#### Chat Orchestration / Negotiation Bot (Complete - v2.1)
+- ✅ ChatOrchestrator service (`app/services/chat_orchestrator.py`)
+- ✅ Automatic response to inbound messages
+- ✅ RAG-powered product lookup for context
+- ✅ LLM negotiation brain with fallback responses
+- ✅ System prompts for negotiation (`app/core/prompts.py`)
+- ✅ Triggered on message ingest via background task
+
 #### P1 Items (Complete - v2.0)
 - ✅ Alias management API - Full CRUD at `/products/{id}/aliases`
 - ✅ Alias management UI at `/admin/aliases`
@@ -47,7 +55,7 @@ References:
 See also: `README.md` Current Status; `tests/` suite
 
 ## Open Gaps (from roadmap/specs)
-- Chat orchestration service (tool planning, guardrails)
+- ~~Chat orchestration service (tool planning, guardrails)~~ ✅ DONE
 - Operator UI auth + API key support + basic rate limiting
 - Object storage for raw artefacts (persist external to local FS) - partially done via media_storage
 - End-to-end integration tests (upload → ingest → chat answer)
@@ -109,10 +117,11 @@ Pointers in repo:
 
 ### P2 — Later
 
-9) Chat orchestration service
-   - Skeleton endpoint `/chat/answer` that sequences: resolve → best‑price → documents.related
-   - Plug LLM later for natural language responses
-   - Returns structured answer cards per spec without LLM dependency
+9) ✅ Chat orchestration service (DONE - moved to v2.1)
+   - ChatOrchestrator with handle_incoming_message
+   - LLM-powered negotiation responses
+   - Automatic trigger on inbound WhatsApp messages
+   - RAG integration for product context
 
 10) Webhooks + integrations
     - Vendor notifications, Slack/WhatsApp outbound hooks on notable changes
@@ -136,12 +145,13 @@ Pointers in repo:
 - ✅ P0: WhatsApp Outbound Messaging — Backend
 - ✅ P1: Alias management UI + API — Backend/UI
 - ✅ P1: Price history span hardening — Backend
+- ✅ P2: Chat Orchestration / Negotiation Bot — Backend (v2.1)
 
 ### In Progress / Planned
 - P1: Protect /admin with Basic Auth — Backend
 - P1: API key + rate limiting for /chat/tools — Backend
 - P1: Object storage adapter + signed URLs — Backend
-- P2: Chat orchestration endpoint (non‑LLM) — Backend
+- ~~P2: Chat orchestration endpoint (non‑LLM) — Backend~~ ✅ DONE
 - P2: Webhook integrations — Backend
 - P2: Enable E2E upload→chat test — QA
 - P2: Ops runbooks — DevOps
@@ -155,6 +165,7 @@ Each issue should include: scope, acceptance criteria, file pointers, test plan.
 | Service | Location | Purpose |
 |---------|----------|---------|
 | `ChatLookupService` | `app/services/chat.py` | Product resolution with SQL + vector search |
+| `ChatOrchestrator` | `app/services/chat_orchestrator.py` | Negotiation bot brain - connects ingest to responses |
 | `WhatsAppIngestService` | `app/services/whatsapp_ingest.py` | Raw message persistence |
 | `WhatsAppOutboundService` | `app/services/whatsapp_outbound.py` | Outbound message handling |
 | `OfferIngestionService` | `app/services/offers.py` | Offer persistence + price history |
@@ -180,4 +191,4 @@ Each issue should include: scope, acceptance criteria, file pointers, test plan.
 - Add/adjust tests near the code you touch; avoid flakey time‑dependent assertions.
 - Run `python scripts/backfill_embeddings.py` after adding aliases to populate embeddings.
 
-Last updated: November 2025 (v2.0 Feature Expansion)
+Last updated: November 2025 (v2.1 Negotiation Bot)

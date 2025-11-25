@@ -21,6 +21,7 @@ from app.services.whatsapp_ingest import WhatsAppIngestService
 from app.services.whatsapp_extract import WhatsAppExtractionService
 from app.services.whatsapp_outbound import WhatsAppOutboundService
 from app.services.whatsapp_scheduler import scheduler
+from app.services.chat_orchestrator import trigger_orchestrator_background
 from app.db import models
 from sqlmodel import select
 from app.services.ingestion_jobs import ingestion_job_runner
@@ -401,6 +402,18 @@ async def ingest(
                     "Failed to schedule WhatsApp extract",
                     extra={"request_id": request_id, "chat_id": chat_id, "error": str(exc)},
                 )
+
+    # Trigger orchestrator for new inbound messages (negotiation bot)
+    created_message_ids = result.get("created_message_ids", [])
+    for msg_id in created_message_ids:
+        try:
+            # Run orchestrator in background to not block the response
+            trigger_orchestrator_background(msg_id)
+        except Exception as exc:  # pragma: no cover - defensive
+            logger.exception(
+                "Failed to trigger orchestrator for message",
+                extra={"request_id": request_id, "message_id": str(msg_id), "error": str(exc)},
+            )
 
     logger.info(
         "WhatsApp ingest processed",

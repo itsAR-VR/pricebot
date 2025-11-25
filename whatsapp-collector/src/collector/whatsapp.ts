@@ -1,18 +1,36 @@
 import { boomify, isBoom } from "@hapi/boom";
-import makeWASocket, {
-  Browsers,
-  ConnectionState,
-  DisconnectReason,
-  WAMessage,
-  WASocket,
-  fetchLatestBaileysVersion,
-  useMultiFileAuthState,
-} from "@adiwajshing/baileys";
+import * as baileysNamespace from "@adiwajshing/baileys";
+import type { ConnectionState, WAMessage, WASocket } from "@adiwajshing/baileys";
 import fs from "node:fs/promises";
 import path from "node:path";
 import qrcode from "qrcode-terminal";
 import { AppConfig } from "../config.js";
 import { Logger } from "../logger.js";
+
+const baileys = (baileysNamespace as any).default ?? baileysNamespace;
+const resolveMakeSocket = (): typeof baileysNamespace.default => {
+  const candidates = [
+    (baileys as any).default,
+    (baileys as any).makeWASocket,
+    (baileysNamespace as any).default,
+    (baileysNamespace as any).makeWASocket,
+    (baileysNamespace as any).default?.default,
+  ];
+  for (const candidate of candidates) {
+    if (typeof candidate === "function") {
+      return candidate;
+    }
+  }
+  throw new Error("Unable to resolve makeWASocket export from @adiwajshing/baileys");
+};
+
+const makeWASocket = resolveMakeSocket();
+const Browsers = baileys.Browsers ?? baileysNamespace.Browsers;
+const DisconnectReason = baileys.DisconnectReason ?? baileysNamespace.DisconnectReason;
+const fetchLatestBaileysVersion =
+  baileys.fetchLatestBaileysVersion ?? baileysNamespace.fetchLatestBaileysVersion;
+const useMultiFileAuthState =
+  baileys.useMultiFileAuthState ?? baileysNamespace.useMultiFileAuthState;
 
 export type MessageHandler = (messages: WAMessage[], socket: WASocket) => void | Promise<void>;
 

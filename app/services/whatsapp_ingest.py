@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import hashlib
+import logging
 from datetime import datetime, timezone, timedelta
 from typing import Iterable
 from uuid import UUID
@@ -9,6 +10,8 @@ from sqlmodel import Session, select
 
 from app.db import models
 from app.core.config import settings
+
+logger = logging.getLogger(__name__)
 
 
 def _utcnow() -> datetime:
@@ -182,12 +185,20 @@ class WhatsAppIngestService:
                 }
             )
 
+        # Collect message IDs for orchestrator trigger
+        created_message_ids = [
+            UUID(d["whatsapp_message_id"])
+            for d in decisions
+            if d.get("status") == "created" and d.get("whatsapp_message_id")
+        ]
+
         return {
             "created": created,
             "deduped": deduped,
             "created_chats": created_chats,
             "decisions": decisions,
             "chats_with_new_messages": list(chats_with_new_messages),
+            "created_message_ids": created_message_ids,
         }
 
     def _link_media_document(
